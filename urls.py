@@ -44,7 +44,6 @@ urlpatterns = patterns( '',
     #    user specify the path to a directory where lots of flat HTML Capital
     #    News Service articles live, then a page that imports them and outputs
     #    log messages.
-    ( r'^imports/article_HTML$', 'conv2wordpress.conv2wp.imports.views.import_article_HTML'),
     #( r'^output/articles$', 'mysite.sourcenet.views.output_articles'),
     #( r'^output/display$', 'mysite.sourcenet.views.output_display'),
 

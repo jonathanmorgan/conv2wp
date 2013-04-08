@@ -30,6 +30,70 @@ class Batch( models.Model ):
 
 #-- END model class Batch --#
 
+#===============================================================================#
+# Models that are components of an item.
+#===============================================================================#
+
+# Author model
+class Author( models.Model ):
+
+
+    #----------------------------------------------------------------------
+    # instance members
+    #----------------------------------------------------------------------
+
+    login = models.CharField( max_length = 255, blank = True, null = True )
+    email = models.CharField( max_length = 255, blank = True, null = True )
+    display_name = models.CharField( max_length = 255, blank = True, null = True )
+    first_name = models.CharField( max_length = 255, blank = True, null = True )
+    middle_name = models.CharField( max_length = 255, blank = True, null = True )
+    last_name = models.CharField( max_length = 255, blank = True, null = True )
+    suffix = models.CharField( max_length = 255, blank = True, null = True )
+    description = models.TextField( blank = True, null = True )
+    notes = models.TextField( blank = True, null = True )
+    create_date_time = models.DateTimeField( auto_now_add = True )
+    update_date_time = models.DateTimeField( auto_now = True )
+    last_export_date_time = models.DateTimeField( blank = True, null = True )
+
+    #----------------------------------------------------------------------
+    # methods
+    #----------------------------------------------------------------------
+
+
+    def __unicode__( self ):
+
+        # return reference
+        string_OUT = ""
+
+        # declare variables
+        separator = ""
+
+        string_OUT = str( self.id ) + " - "
+        
+        if ( self.last_name ):
+
+            string_OUT += self.last_name
+            separator = ", "
+
+        if ( self.first_name ):
+
+            string_OUT += separator + self.first_name
+            separator = " "
+
+        if ( self.middle_name ):
+
+            string_OUT += separator + self.middle_name
+            separator = " "
+
+        # eventually add in email addresses.
+
+        return string_OUT
+
+    #-- END method __unicode__() --#
+
+
+#-- END model class Author --#
+
 
 # Category model
 class Category( models.Model ):
@@ -140,13 +204,13 @@ class Channel( models.Model ):
 
     # information on channel.
     title = models.CharField( max_length = 255, blank = True, null = True )
-    link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    link = models.URLField( max_length = 255, blank = True, null = True )
     description = models.TextField( blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
     generator = models.CharField( max_length = 255, blank = True, null = True )
     wxr_version = models.CharField( max_length = 255, blank = True, null = True )
-    base_site_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
-    base_blog_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    base_site_URL = models.URLField( max_length = 255, blank = True, null = True )
+    base_blog_URL = models.URLField( max_length = 255, blank = True, null = True )
 
     # related authors, categories, tags, and terms
     authors = models.ManyToManyField( Author, blank = True, null = True )
@@ -162,20 +226,20 @@ class Channel( models.Model ):
     cloud_protocol = models.CharField( max_length = 255, blank = True, null = True )
 
     # blog image
-    blog_image_url = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    blog_image_url = models.URLField( max_length = 255, blank = True, null = True )
     blog_image_title = models.CharField( max_length = 255, blank = True, null = True )
-    blog_image_link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    blog_image_link = models.URLField( max_length = 255, blank = True, null = True )
 
     # - blog open search atom link: <atom:link rel="search" type="application/opensearchdescription+xml" href="http://capitalnewsservice.wordpress.com/osd.xml" title="Capital News Service" />
     atom_open_search_rel = models.CharField( max_length = 255, blank = True, null = True )
     atom_open_search_type = models.CharField( max_length = 255, blank = True, null = True )
-    atom_open_search_href = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    atom_open_search_href = models.URLField( max_length = 255, blank = True, null = True )
     atom_open_search_title = models.CharField( max_length = 255, blank = True, null = True )
 
     # - blog hub atom link: <atom:link rel='hub' href='http://capitalnewsservice.wordpress.com/?pushpress=hub'/>
     atom_blog_hub_rel = models.CharField( max_length = 255, blank = True, null = True )
     atom_blog_hub_type = models.CharField( max_length = 255, blank = True, null = True )
-    atom_blog_hub_href = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    atom_blog_hub_href = models.URLField( max_length = 255, blank = True, null = True )
     atom_blog_hub_title = models.CharField( max_length = 255, blank = True, null = True )
 
     #----------------------------------------------------------------------
@@ -192,67 +256,6 @@ class Channel( models.Model ):
 
 
 #-- END model class Channel --#
-
-
-# Author model
-class Author( models.Model ):
-
-
-    #----------------------------------------------------------------------
-    # instance members
-    #----------------------------------------------------------------------
-
-    login = models.CharField( max_length = 255, blank = True, null = True )
-    email = models.CharField( max_length = 255, blank = True, null = True )
-    display_name = models.CharField( max_length = 255, blank = True, null = True )
-    first_name = models.CharField( max_length = 255, blank = True, null = True )
-    middle_name = models.CharField( max_length = 255, blank = True, null = True )
-    last_name = models.CharField( max_length = 255, blank = True, null = True )
-    suffix = models.CharField( max_length = 255, blank = True, null = True )
-    description = models.TextField( blank = True, null = True )
-    notes = models.TextField( blank = True, null = True )
-    create_date_time = models.DateTimeField( auto_now_add = True )
-    update_date_time = models.DateTimeField( auto_now = True )
-    last_export_date_time = models.DateTimeField( blank = True, null = True )
-
-    #----------------------------------------------------------------------
-    # methods
-    #----------------------------------------------------------------------
-
-
-    def __unicode__( self ):
-
-        # return reference
-        string_OUT = ""
-
-        # declare variables
-        separator = ""
-
-        string_OUT = str( self.id ) + " - "
-        
-        if ( self.last_name ):
-
-            string_OUT += self.last_name
-            separator = ", "
-
-        if ( self.first_name ):
-
-            string_OUT += separator + self.first_name
-            separator = " "
-
-        if ( self.middle_name ):
-
-            string_OUT += separator + self.middle_name
-            separator = " "
-
-        # eventually add in email addresses.
-
-        return string_OUT
-
-    #-- END method __unicode__() --#
-
-
-#-- END model class Author --#
 
 
 class EmailAddress( models.Model ):
@@ -287,6 +290,9 @@ class EmailAddress( models.Model ):
 
 #-- END model class Batch --#
 
+#===============================================================================#
+# Item model itself.
+#===============================================================================#
 
 # Item model
 class Item( models.Model ):
@@ -322,7 +328,7 @@ class Item( models.Model ):
 
     channel = models.ForeignKey( Channel )
     title = models.CharField( max_length = 255, blank = True, null = True )
-    link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    link = models.URLField( max_length = 255, blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
     creators = models.ManyToManyField( Author, blank = True, null = True )
     guid = models.CharField( max_length = 255, blank = True, null = True )
@@ -342,7 +348,7 @@ class Item( models.Model ):
     post_type = models.CharField( max_length = 255, blank = True, null = True, default = ITEM_TYPE_POST )
     post_password = models.CharField( max_length = 255, blank = True, null = True )
     is_sticky = models.BooleanField( default = False )
-    attachment_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    attachment_URL = models.URLField( max_length = 255, blank = True, null = True )
     categories = models.ManyToManyField( Category, blank = True, null = True )
     tags = models.ManyToManyField( Tag, blank = True, null = True )
 
@@ -361,6 +367,10 @@ class Item( models.Model ):
 
 #-- END model class Item --#
 
+
+#===============================================================================#
+# Things that reference Item model.
+#===============================================================================#
 
 # PostMetaData model
 class PostMetaData( models.Model ):
