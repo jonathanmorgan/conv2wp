@@ -630,41 +630,41 @@
             <wp:term_slug>all-pages</wp:term_slug>
             <wp:term_name><![CDATA[All Pages]]></wp:term_name>
         </wp:term>
-<generator>http://wordpress.com/</generator>
-<cloud domain='wpthemetestdata.wordpress.com' port='80' path='/?rsscloud=notify' registerProcedure='' protocol='http-post' />
-<image>
-		<url>https://s2.wp.com/i/buttonw-com.png</url>
-		<title>Theme Unit Test Data</title>
-		<link>http://wpthemetestdata.wordpress.com</link>
-	</image>
-	<atom:link rel="search" type="application/opensearchdescription+xml" href="http://wpthemetestdata.wordpress.com/osd.xml" title="Theme Unit Test Data" />
-	<atom:link rel='hub' href='http://wpthemetestdata.wordpress.com/?pushpress=hub'/>
-<item>
-  <title>Page A</title>
-  <link>http://wpthemetestdata.wordpress.com/page-a/</link>
-  <pubDate>Fri, 24 Jun 2011 01:38:52 +0000</pubDate>
-  <dc:creator>themedemos</dc:creator>
-  <guid isPermaLink="false">http://wpthemetestdata.wordpress.com/?page_id=733</guid>
-  <description></description>
-  <content:encoded><![CDATA[(lorem ipsum)]]></content:encoded>
-  <excerpt:encoded><![CDATA[]]></excerpt:encoded>
-  <wp:post_id>733</wp:post_id>
-  <wp:post_date>2011-06-23 18:38:52</wp:post_date>
-  <wp:post_date_gmt>2011-06-24 01:38:52</wp:post_date_gmt>
-  <wp:comment_status>open</wp:comment_status>
-  <wp:ping_status>closed</wp:ping_status>
-  <wp:post_name>page-a</wp:post_name>
-  <wp:status>publish</wp:status>
-  <wp:post_parent>0</wp:post_parent>
-  <wp:menu_order>10</wp:menu_order>
-  <wp:post_type>page</wp:post_type>
-  <wp:post_password></wp:post_password>
-  <wp:is_sticky>0</wp:is_sticky>
-  <wp:postmeta>
-    <wp:meta_key>_wp_page_template</wp:meta_key>
-    <wp:meta_value><![CDATA[default]]></wp:meta_value>
-  </wp:postmeta>
-</item>
+        <generator>http://wordpress.com/</generator>
+        <cloud domain='wpthemetestdata.wordpress.com' port='80' path='/?rsscloud=notify' registerProcedure='' protocol='http-post' />
+        <image>
+            <url>https://s2.wp.com/i/buttonw-com.png</url>
+            <title>Theme Unit Test Data</title>
+            <link>http://wpthemetestdata.wordpress.com</link>
+        </image>
+        <atom:link rel="search" type="application/opensearchdescription+xml" href="http://wpthemetestdata.wordpress.com/osd.xml" title="Theme Unit Test Data" />
+        <atom:link rel='hub' href='http://wpthemetestdata.wordpress.com/?pushpress=hub'/>
+        <item>
+            <title>Page A</title>
+            <link>http://wpthemetestdata.wordpress.com/page-a/</link>
+            <pubDate>Fri, 24 Jun 2011 01:38:52 +0000</pubDate>
+            <dc:creator>themedemos</dc:creator>
+            <guid isPermaLink="false">http://wpthemetestdata.wordpress.com/?page_id=733</guid>
+            <description></description>
+            <content:encoded><![CDATA[(lorem ipsum)]]></content:encoded>
+            <excerpt:encoded><![CDATA[]]></excerpt:encoded>
+            <wp:post_id>733</wp:post_id>
+            <wp:post_date>2011-06-23 18:38:52</wp:post_date>
+            <wp:post_date_gmt>2011-06-24 01:38:52</wp:post_date_gmt>
+            <wp:comment_status>open</wp:comment_status>
+            <wp:ping_status>closed</wp:ping_status>
+            <wp:post_name>page-a</wp:post_name>
+            <wp:status>publish</wp:status>
+            <wp:post_parent>0</wp:post_parent>
+            <wp:menu_order>10</wp:menu_order>
+            <wp:post_type>page</wp:post_type>
+            <wp:post_password></wp:post_password>
+            <wp:is_sticky>0</wp:is_sticky>
+            <wp:postmeta>
+                <wp:meta_key>_wp_page_template</wp:meta_key>
+                <wp:meta_value><![CDATA[default]]></wp:meta_value>
+            </wp:postmeta>
+        </item>
 <item>
   <title>dsc20040724_152504_532</title>
   <link>http://wpthemetestdata.wordpress.com/2008/06/10/post-format-test-gallery/dsc20040724_152504_532-2/#main</link>
@@ -5643,5 +5643,5 @@ Occasionally in her travels through her children's minds Mrs. Darling found thin
     <wp:meta_value><![CDATA[]]></wp:meta_value>
   </wp:postmeta>
 </item>
-  </channel>
+    </channel>
 </rss>
