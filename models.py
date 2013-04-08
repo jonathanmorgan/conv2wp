@@ -38,10 +38,14 @@ class Category( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
+    term_id = models.IntegerField( blank = True, null = True )
+    nice_name = models.CharField( max_length = 255 )
+    parent_category = models.ForeignKey( 'self', blank = True, null = True )
     name = models.CharField( max_length = 255 )
+
+    # housekeeping
     label = models.CharField( max_length = 255 )
     description = models.TextField( blank = True, null = True )
-    parent_category = models.ForeignKey( 'self', blank = True, null = True )
     last_modified = models.DateField( auto_now = True )
 
     # Meta-data for this class.
@@ -66,10 +70,13 @@ class Tag( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
+    term_id = models.IntegerField( blank = True, null = True )
+    slug = models.CharField( max_length = 255 )
     name = models.CharField( max_length = 255 )
+
+    # housekeeping
     label = models.CharField( max_length = 255 )
     description = models.TextField( blank = True )
-    parent_tag = models.ForeignKey( 'self', blank = True, null = True )
     last_modified = models.DateField( auto_now = True )
 
     # Meta-data for this class.
@@ -87,6 +94,38 @@ class Tag( models.Model ):
 #= End Tag Model =========================================================
 
 
+# Term model
+class Term( models.Model ):
+
+    #----------------------------------------------------------------------
+    # instance members
+    #----------------------------------------------------------------------
+
+    term_id = models.IntegerField( blank = True, null = True )
+    term_taxonomy = models.CharField( max_length = 255 )
+    slug = models.CharField( max_length = 255 )
+    name = models.CharField( max_length = 255 )
+
+    # housekeeping
+    label = models.CharField( max_length = 255 )
+    description = models.TextField( blank = True )
+    last_modified = models.DateField( auto_now = True )
+
+    # Meta-data for this class.
+    class Meta:
+        ordering = [ 'name' ]
+
+    #----------------------------------------------------------------------
+    # methods
+    #----------------------------------------------------------------------
+
+    def __unicode__( self ):
+        string_OUT = str( self.id ) + " - " + self.name
+        return string_OUT
+
+#= End Term Model =========================================================
+
+
 # Channel model
 class Channel( models.Model ):
 
@@ -94,26 +133,35 @@ class Channel( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
+    # housekeeping
     batch = models.ForeignKey( Batch )
+    create_date_time = models.DateTimeField( auto_now_add = True )
+    last_export_date_time = models.DateTimeField( blank = True, null = True )
+
+    # information on channel.
     title = models.CharField( max_length = 255, blank = True, null = True )
     link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
     description = models.TextField( blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
     generator = models.CharField( max_length = 255, blank = True, null = True )
-    WXR_version = models.CharField( max_length = 255, blank = True, null = True )
-    base_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
-    site_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
-    create_date_time = models.DateTimeField( auto_now_add = True )
-    last_export_date_time = models.DateTimeField( blank = True, null = True )
+    wxr_version = models.CharField( max_length = 255, blank = True, null = True )
+    base_site_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+    base_blog_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
+
+    # related authors, categories, tags, and terms
+    authors = models.ManyToManyField( Author, blank = True, null = True )
     categories = models.ManyToManyField( Category, blank = True, null = True )
     tags = models.ManyToManyField( Tag, blank = True, null = True )
+    terms = models.ManyToManyField( Term, blank = True, null = True )
 
-    # - cloud? - example <cloud domain='capitalnewsservice.wordpress.com' port='80' path='/?rsscloud=notify' registerProcedure='' protocol='http-post' />
+    # - cloud tag - example <cloud domain='capitalnewsservice.wordpress.com' port='80' path='/?rsscloud=notify' registerProcedure='' protocol='http-post' />
     cloud_domain = models.CharField( max_length = 255, blank = True, null = True )
     cloud_port = models.IntegerField( blank = True, null = True )
     cloud_path = models.CharField( max_length = 255, blank = True, null = True )
     cloud_register_procedure = models.CharField( max_length = 255, blank = True, null = True )
     cloud_protocol = models.CharField( max_length = 255, blank = True, null = True )
+
+    # blog image
     blog_image_url = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
     blog_image_title = models.CharField( max_length = 255, blank = True, null = True )
     blog_image_link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
@@ -146,26 +194,26 @@ class Channel( models.Model ):
 #-- END model class Channel --#
 
 
-# Creator model
-class Creator( models.Model ):
+# Author model
+class Author( models.Model ):
+
 
     #----------------------------------------------------------------------
     # instance members
     #----------------------------------------------------------------------
 
+    login = models.CharField( max_length = 255, blank = True, null = True )
+    email = models.CharField( max_length = 255, blank = True, null = True )
+    display_name = models.CharField( max_length = 255, blank = True, null = True )
     first_name = models.CharField( max_length = 255, blank = True, null = True )
     middle_name = models.CharField( max_length = 255, blank = True, null = True )
     last_name = models.CharField( max_length = 255, blank = True, null = True )
     suffix = models.CharField( max_length = 255, blank = True, null = True )
-    username = models.CharField( max_length = 255, blank = True, null = True )
     description = models.TextField( blank = True, null = True )
     notes = models.TextField( blank = True, null = True )
     create_date_time = models.DateTimeField( auto_now_add = True )
     update_date_time = models.DateTimeField( auto_now = True )
     last_export_date_time = models.DateTimeField( blank = True, null = True )
-
-    create_date_time = models.DateTimeField( auto_now_add = True )
-    update_date_time = models.DateTimeField( auto_now = True )
 
     #----------------------------------------------------------------------
     # methods
@@ -204,7 +252,7 @@ class Creator( models.Model ):
     #-- END method __unicode__() --#
 
 
-#-- END model class Creator --#
+#-- END model class Author --#
 
 
 class EmailAddress( models.Model ):
@@ -213,7 +261,7 @@ class EmailAddress( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
-    creator = models.ForeignKey( Creator )
+    author = models.ForeignKey( Author )
     email_address = models.CharField( max_length = 255 )
     create_date_time = models.DateTimeField( auto_now_add = True )
     update_date_time = models.DateTimeField( auto_now = True )
@@ -245,7 +293,7 @@ class Item( models.Model ):
 
     '''
     Item based on Wordpress eXtended RSS file spec (WXR).  Sample document at:
-    http://google-blog-converters-appengine.googlecode.com/svn/trunk/samples/wordpress-sample.wxr
+    https://wpcom-themes.svn.automattic.com/demo/theme-unit-test-data.xml
     '''
 
     #----------------------------------------------------------------------
@@ -276,12 +324,12 @@ class Item( models.Model ):
     title = models.CharField( max_length = 255, blank = True, null = True )
     link = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
-    creators = models.ManyToManyField( Creator, blank = True, null = True )
+    creators = models.ManyToManyField( Author, blank = True, null = True )
     guid = models.CharField( max_length = 255, blank = True, null = True )
     guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
     description = models.TextField( blank = True, null = True )
     content_encoded = models.TextField( blank = True, null = True )
-    excerpt = models.TextField( blank = True, null = True )
+    excerpt_encoded = models.TextField( blank = True, null = True )
     post_id = models.IntegerField( blank = True, null = True )
     post_date_time = models.DateTimeField( blank = True, null = True )
     post_date_time_gmt = models.DateTimeField( blank = True, null = True )
@@ -291,7 +339,7 @@ class Item( models.Model ):
     post_status = models.CharField( max_length = 255, blank = True, null = True, default = POST_STATUS_PUBLISH )
     post_parent = models.IntegerField( blank = True, null = True, default = 0 )
     menu_order = models.IntegerField( blank = True, null = True, default = 0 )
-    item_type = models.CharField( max_length = 255, blank = True, null = True, default = ITEM_TYPE_POST )
+    post_type = models.CharField( max_length = 255, blank = True, null = True, default = ITEM_TYPE_POST )
     post_password = models.CharField( max_length = 255, blank = True, null = True )
     is_sticky = models.BooleanField( default = False )
     attachment_URL = models.URLField( max_length = 255, verify_exists = False, blank = True, null = True )
@@ -322,7 +370,7 @@ class PostMetaData( models.Model ):
     #----------------------------------------------------------------------
 
     item = models.ForeignKey( Item )
-    name = models.CharField( max_length = 255 )
+    key = models.CharField( max_length = 255 )
     value = models.TextField( blank = True, null = True )
     description = models.TextField( blank = True, null = True )
     last_modified = models.DateField( auto_now = True )
@@ -340,3 +388,46 @@ class PostMetaData( models.Model ):
         return string_OUT
 
 #= End PostMetaData Model =========================================================
+
+
+# Comment model
+class Comment( models.Model ):
+
+    COMMENT_STATUS_APPROVED = True
+    COMMENT_STATUS_NOT_APPROVED = False
+
+    #----------------------------------------------------------------------
+    # instance members
+    #----------------------------------------------------------------------
+
+    item = models.ForeignKey( Item )
+    comment_id = models.IntegerField( blank = True, null = True )
+    author_name = models.CharField( max_length = 255, blank = True, null = True )
+    author_email = models.CharField( max_length = 255, blank = True, null = True )
+    author_url = models.CharField( max_length = 255, blank = True, null = True )
+    author_ip = models.CharField( max_length = 255, blank = True, null = True )
+    comment_date_time = models.DateTimeField( blank = True, null = True )
+    comment_date_time_gmt = models.DateTimeField( blank = True, null = True )
+    content_encoded = models.TextField( blank = True, null = True )
+    approved = models.BooleanField( default = False )
+    comment_type = models.CharField( max_length = 255, blank = True, null = True )
+    parent_comment = models.ForeignKey( 'self', blank = True, null = True )
+    comment_author = models.ForeignKey( Author, blank = True, null = True )
+
+    # housekeeping
+    description = models.TextField( blank = True, null = True )
+    last_modified = models.DateField( auto_now = True )
+
+    # Meta-data for this class.
+    class Meta:
+        ordering = [ 'comment_date_time' ]
+
+    #----------------------------------------------------------------------
+    # methods
+    #----------------------------------------------------------------------
+
+    def __unicode__( self ):
+        string_OUT = str( self.id ) + " - " + self.author_name + ": " + self.comment_date_time.strftime( "%b %d, %Y" )
+        return string_OUT
+
+#= End Comment Model =========================================================
