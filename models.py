@@ -50,6 +50,7 @@ class Author( models.Model ):
     middle_name = models.CharField( max_length = 255, blank = True, null = True )
     last_name = models.CharField( max_length = 255, blank = True, null = True )
     suffix = models.CharField( max_length = 255, blank = True, null = True )
+    original_user_id = models.IntegerField()
     description = models.TextField( blank = True, null = True )
     notes = models.TextField( blank = True, null = True )
     create_date_time = models.DateTimeField( auto_now_add = True )
@@ -303,6 +304,10 @@ class Item( models.Model ):
     Item based on Wordpress eXtended RSS file spec (WXR).  Sample document at:
     https://wpcom-themes.svn.automattic.com/demo/theme-unit-test-data.xml
     '''
+
+    # !TODO add Author, Category, Comment to Item
+    # create methods that add the above to the Item, and also associate
+    #    them with Related Channel.
 
     #----------------------------------------------------------------------
     # declaring a few "constants"

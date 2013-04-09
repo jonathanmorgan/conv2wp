@@ -10,6 +10,7 @@ import numbers
 import MySQLdb
 
 # conv2wp imports
+from conv2wp.models import Author
 from conv2wp.models import Batch
 from conv2wp.models import Category
 from conv2wp.models import Channel
@@ -64,6 +65,39 @@ class B2E_Importer():
     time_zone_offset = -5
 
     
+    #---------------------------------------------------------------------------#
+    # class methods
+    #---------------------------------------------------------------------------#
+
+
+    @classmethod
+    def test_class( cls, password_IN = "", slug_IN = "" ):
+        
+        # create instance
+        b2e_importer = cls()
+        
+        # initialize database
+        b2e_importer.db_database = "b2"
+        b2e_importer.db_username = "django_user"
+        b2e_importer.db_password = password_IN
+        
+        # initialize channel information
+        b2e_importer.channel_title = "Going home: A journal on Detroit's neighborhoods"
+        b2e_importer.channel_description = "A Detroit News journal of the city's neighborhoods, starting with the Dobel St. area on the east side, just south of McNichols and east of Van Dyke. "
+        b2e_importer.channel_generator = "jonathan.scott.morgan@gmail.com"
+        b2e_importer.channel_base_site_url = "http://detroitnews.com"
+        b2e_importer.channel_base_blog_url = "http://community.detroitnews.com/blogs/index.php/neighborhood"
+        
+        # initialize time zone.
+        b2e_importer.time_zone = "-0500"
+        b2e_importer.time_zone_offset = -5
+        
+        # run import for blog 14
+        b2e_importer.import_b2e( slug_IN, 14 )        
+        
+    #-- END class method test_class() --#
+    
+
     #---------------------------------------------------------------------------#
     # instance methods
     #---------------------------------------------------------------------------#
@@ -262,8 +296,8 @@ class B2E_Importer():
         # ==> pubdate = models.CharField( max_length = 255, blank = True, null = True )
         # ==> pub_date_time = models.DateTimeField( blank = True, null = True )
         pub_date = datetime.datetime.now()
-        instance_OUT.pubdate = pub_date
-        instance_OUT.pub_date_time = pub_date.strftime( self.RSS_DATE_STRFTIME_FORMAT + " " + self.time_zone )
+        instance_OUT.pubdate = pub_date.strftime( self.RSS_DATE_STRFTIME_FORMAT + " " + self.time_zone )
+        instance_OUT.pub_date_time = pub_date
 
         # ==> generator = models.CharField( max_length = 255, blank = True, null = True )
         instance_OUT.generator = self.channel_generator
@@ -572,29 +606,24 @@ class B2E_Importer():
     #-- END method process_categories() --#
     
 
-    def process_posts( self, blog_id_IN = -1, channel_IN = None, *args, **kwargs ):
-        
+    def process_post( self, current_post_row_IN, channel_IN, *args, **kwargs ):
+
         '''
-        # get posts - if we have a blog ID, limit to that blog.
-        
-        # For each post:
-        # - create Item, load with information from post.
-        # - get author user, add it to Authors.
-        # - get comments for post, store them in Comments, asociated to Item.
-        # - get categories for post, look up and associate them.
+        Accepts a channel and a post row (result of querying B2E database for
+           posts we want to migrate, in the form where the row is keyed by
+           column name, not index of column).  Both are required.
+        Then, does the following:  
+        - creates Item, load with information from post.
+        - get author user, add it to Authors.
+        - get comments for post, store them in Comments, asociated to Item.
+        - get categories for post, look up and associate them.
         '''
 
         # return reference
         status_OUT = self.STATUS_SUCCESS
         
-        # declare variables
-        my_db_cursor = None
-        table_name_prefix = ""
-        sql_select_posts = ""
-        post_query_results = None
-        current_post = None
-        
         # things we retrieve from post.
+        current_post = None
         current_post_id = ""
         current_post_creator_user_id = ""
         current_post_datestart = ""
@@ -623,8 +652,331 @@ class B2E_Importer():
         # model for storing in new database.
         current_item_model = None
         
+        # variables for parsing body.
+        more_index = -1
+        content_before_more = ""
+        content_after_more = ""
+        
         # variables for categories
         current_cat_model = None
+        
+        # place row passed in into current_post
+        current_post = current_post_row_IN
+
+        # retrieve post values
+        current_post_id = current_post[ "post_ID" ]
+        current_post_creator_user_id = current_post[ "post_creator_user_ID" ]
+        current_post_datestart = current_post[ "post_datestart" ] # this is the date the post was published.
+        current_post_datecreated = current_post[ "post_datecreated" ]
+        current_post_status = current_post[ "post_status" ]
+        current_post_locale = current_post[ "post_locale" ]
+        current_post_content = current_post[ "post_content" ]
+        current_post_title = current_post[ "post_title" ]
+        current_post_urltitle = current_post[ "post_urltitle" ]
+        current_post_main_cat_id = current_post[ "post_main_cat_ID" ]
+        current_post_views = current_post[ "post_views" ]
+        current_post_wordcount = current_post[ "post_wordcount" ]
+
+        # for now, just output.
+        print( "- current post: " + str( current_post_id ) + " - " + current_post_title + " - " + current_post_urltitle + " - " + str( current_post_datestart ) )
+        
+        # check if item already exists.
+        try:
+
+            # try to get item object.                
+            current_item_model = Item.objects.all().get( post_id = current_post_id )
+            print( "    - found existing." )
+        
+        except Exception, e:
+        
+            # not found - create new instance.
+            current_item_model = Item()
+            print( "    - created new ( " + str( e ) + " )." )
+        
+        #-- END check to see if item already is stored. --#
+
+        #---------------------------------------------------------------#
+        # set values.
+        #---------------------------------------------------------------#
+        
+        # ===> channel = models.ForeignKey( Channel )
+        current_item_model.channel = channel_IN
+        
+        # ==> post_id = models.IntegerField( blank = True, null = True )
+        current_item_model.post_id = current_post_id
+        current_item_model.comment_status = Item.INTERACTION_STATUS_CLOSED
+        
+        # ==> post_status = models.CharField( max_length = 255, blank = True, null = True, default = POST_STATUS_PUBLISH )
+        
+        # is post published?
+        if ( current_post_status == self.B2E_POST_STATUS_PUBLISHED ):
+        
+            # yes - set it to publish in WordPress
+            current_item_model.status = Item.POST_STATUS_PUBLISH
+            
+        else:
+        
+            # no - set it to draft in WordPress
+            current_item_model.status = Item.POST_STATUS_DRAFT
+            
+        #-- END check of status of post. --#
+        
+        # ==> post_name = models.CharField( max_length = 255, blank = True, null = True )
+        # slug - convert underscores in the current_post_urltitle to hyphens.
+
+        current_item_model.post_name = current_post_urltitle.replace( "_", "-" )
+        
+        # ==> post_date_time = models.DateTimeField( blank = True, null = True )
+        # get and parse publication date.
+        pub_date = current_post_datestart
+        current_item_model.post_date_time = pub_date
+
+        # ==> pubdate = models.CharField( max_length = 255, blank = True, null = True )
+        # ==> pub_date_time = models.DateTimeField( blank = True, null = True )
+        # convert post date to the following format: Sun, 01 Aug 2010 16:42:26 +0000 - could use either date, just get offset right (+-HHMM - GMT = +0000, EST = -0500)
+        # RSS spec: http://cyber.law.harvard.edu/rss/rss.html#optionalChannelElements
+        # RSS date format = http://asg.web.cmu.edu/rfc/rfc822.html#sec-5
+        current_item_model.pubdate = pub_date.strftime( self.RSS_DATE_STRFTIME_FORMAT + " " + self.time_zone )
+        current_item_model.pub_date_time = pub_date
+
+        # ==> post_date_time_gmt = models.DateTimeField( blank = True, null = True )
+        # add 5 hours for GMT.
+        my_tz_offset = self.time_zone_offset
+        
+        # convert to seconds
+        my_tz_offset_seconds = my_tz_offset * 3600
+        
+        # invert, since we are converting from local to GMT, not the
+        #    other way around.
+        my_tz_offset_seconds = my_tz_offset_seconds * -1
+
+        # create timedelta for offset.
+        timedelta_time_zone_offset = datetime.timedelta( 0, my_tz_offset_seconds )
+        
+        # convert pub date to GMT
+        pub_date_GMT = pub_date + timedelta_time_zone_offset
+        
+        # store it.
+        current_item_model.post_date_time_gmt = pub_date_GMT
+        
+        # parse 
+        pub_date_year = pub_date.strftime( "%Y" )
+        pub_date_month = pub_date.strftime( "%m" )
+        pub_date_day = pub_date.strftime( "%d" )
+        
+        # Link and URL
+        # sample - http://community.detroitnews.com/blogs/index.php/neighborhood/2013/03/28/another_blessing
+        current_post_url = "http://community.detroitnews.com/blogs/index.php/neighborhood/" + pub_date_year + "/" + pub_date_month + "/" + pub_date_day + "/" + current_post_urltitle
+        
+        # ==> link = models.URLField( max_length = 255, blank = True, null = True )
+        current_item_model.link = current_post_url
+
+        # ==> guid = models.CharField( max_length = 255, blank = True, null = True )
+        # sample - http://community.detroitnews.com/blogs/index.php?title=another_blessing
+        current_post_guid = "http://community.detroitnews.com/blogs/index.php?title=" + current_post_urltitle
+        current_item_model.guid = current_post_guid
+        
+        # ==> title = models.CharField( max_length = 255, blank = True, null = True )
+        current_item_model.title = current_post_title
+
+        # ==> content_encoded = models.TextField( blank = True, null = True )
+        # ==> excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
+        
+        # locate "<!--more-->" in post.
+        more_index = current_post_content.lower().find( "<!--more-->" )
+
+        # did we find it?
+        if ( more_index > -1 ):                
+
+            # get content before and after more
+            content_before_more = current_post_content[ 0 : more_index ]
+            content_after_more = current_post_content[ more_index + 11 : len( current_post_content ) ]
+        
+            # take everything before "<!--more-->" and place it in excerpt.
+            current_item_model.excerpt_encoded = content_before_more
+            
+            # then, remove "<!--more-->" from complete post, store result in content_encoded.
+            current_item_model.content_encoded = content_before_more + "\n" + content_after_more
+            
+        else:
+        
+            # no <!--more--> - just store the content.
+            current_item_model.content_encoded = current_post_content
+            
+        #-- END check to see if we found "<!--more-->" --#
+
+        # save item.
+        current_item_model.save()
+    
+        #---------------------------------------------------------------#
+        # Author
+        #---------------------------------------------------------------#
+
+        # ==> creators = models.ManyToManyField( Author, blank = True, null = True )
+        # !TODO process authors
+        
+        #---------------------------------------------------------------#
+        # Categories (main, other)
+        #---------------------------------------------------------------#
+
+        # !TODO process categories
+
+        # ==> categories = models.ManyToManyField( Category, blank = True, null = True )
+        
+        # need method for processing post categories.
+        
+        # main category?
+        if ( ( current_post_main_cat_id ) and ( current_post_main_cat_id != None ) and ( current_post_main_cat_id != "" ) and ( isinstance( current_post_main_cat_id, numbers.Integral ) == True ) and ( current_post_main_cat_id > 0 ) ):
+
+            # check if main category already exists (it should).
+            try:
+
+                # try to get category.                
+                current_cat_model = Category.objects.all().get( term_id = current_post_main_cat_id )
+                print( "    - found existing category." )
+            
+            except Exception, e:
+            
+                # not found - create new instance, hopefully it will get
+                #    imported later, updated.
+                current_cat_model = Category()
+                current_cat_model.term_id = current_cat_parent_ID
+                current_cat_model.name = current_cat_parent_ID
+                current_cat_model.nice_name = current_cat_parent_ID
+                current_cat_model.save()
+                print( "    - created new category ( " + str( e ) + "." )
+            
+            #-- END check to see if category already is stored. --#
+
+            # store parent if one present
+            # current_cat_model.parent_category = parent_cat_model
+
+        #-- END check to see if parent category ID. --#
+
+        #---------------------------------------------------------------#
+        # Comments
+        #---------------------------------------------------------------#
+
+        # !TODO process comments.
+
+        # Fields we aren't setting (or are leaving set to default):
+        # - guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
+        # - description = models.TextField( blank = True, null = True, default = "" )
+        # - comment_status = models.CharField( max_length = 255, choices = INTERACTION_STATUSES, blank = True, default = INTERACTION_STATUS_CLOSED )
+        # - ping_status = models.CharField( max_length = 255, choices = INTERACTION_STATUSES, blank = True, default = INTERACTION_STATUS_CLOSED )
+        # - post_parent = models.IntegerField( blank = True, null = True, default = 0 )
+        # - menu_order = models.IntegerField( blank = True, null = True, default = 0 )
+        # - post_type = models.CharField( max_length = 255, blank = True, null = True, default = ITEM_TYPE_POST )
+        # - post_password = models.CharField( max_length = 255, blank = True, null = True )
+        # - is_sticky = models.BooleanField( default = False )
+        # - attachment_URL = models.URLField( max_length = 255, blank = True, null = True )
+        # - tags = models.ManyToManyField( Tag, blank = True, null = True )
+        
+        # save item.
+        #current_item_model.save()
+
+        return status_OUT
+
+    #-- END method process_post() --#
+    
+    
+    def process_post_author( self, author_id_IN, item_IN, *args, **kwargs ):
+    
+        '''
+        Accepts author ID (B2E user ID), and item for B2E blog post that has been
+           initialized to contain all information from the post (including post
+           ID).  First, checks to see if an author exists for this User ID.  If
+           yes, retrieves it. If no, pulls author information from E2, uses it to
+           create an Author instance.  Then, associates Author with item (and
+           channel - item method should do that) and we're done.
+           
+        Post-conditions: creates Author instance and stores it in database if
+           needed.  Also updates item and that item's related channel so Author
+           is associated with each if it wasn't before.
+        '''
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        author_model = None
+        sql_select_user = ""
+        my_db_cursor = None
+        query_results = None
+        table_name_prefix = ""
+        
+        # try to find author by their E2 ID.
+        try:
+        
+            # Try to get Author.
+            author_model = Author.objects.all().get( original_user_id = author_id_IN )
+        
+        except Exception, e:
+        
+            # !TODO - pick up here!
+            # not found.  Create and save instance.
+            author_model = Author()
+            
+            # retrieve author information from B2E database.
+
+            # retrieve database cursor.
+            my_db_cursor = self.get_database_cursor()
+            
+            # get table prefix
+            table_name_prefix = self.db_table_name_prefix
+            
+            # create query to retrieve posts and author information.
+            sql_select_user = "SELECT * FROM " + table_name_prefix + "users WHERE user_ID = " + author_id_IN + ";"
+            
+            # execute query
+            try:
+    
+                # execute query and retrieve results        
+                my_db_cursor.execute( sql_select_user )
+                query_results = my_db_cursor.fetchall()
+    
+                # loop over categories.
+                for current_post in query_results:
+                    
+                    # process post
+                    self.process_post( current_post, channel_IN )
+                
+                #-- END loop over posts. --#
+                
+            except Exception, e:
+            
+                status_OUT = self.STATUS_PREFIX_ERROR + "Exception message: " + str( e )
+            
+            #-- END try/except around author query --#
+        
+        #-- END try/except around retrieving Author --#
+        
+        return status_OUT
+    
+    #-- END method process_post_author() --#
+
+
+    def process_posts( self, blog_id_IN = -1, channel_IN = None, *args, **kwargs ):
+        
+        '''
+        # get posts - if we have a blog ID, limit to that blog.
+        
+        # For each post:
+        # - create Item, load with information from post.
+        # - get author user, add it to Authors.
+        # - get comments for post, store them in Comments, asociated to Item.
+        # - get categories for post, look up and associate them.
+        '''
+
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        my_db_cursor = None
+        table_name_prefix = ""
+        sql_select_posts = ""
+        post_query_results = None
+        current_post = None
         
         # retrieve database cursor.
         my_db_cursor = self.get_database_cursor()
@@ -658,189 +1010,8 @@ class B2E_Importer():
             # loop over categories.
             for current_post in query_results:
                 
-                # retrieve post values
-                current_post_id = current_post[ "post_ID" ]
-                current_post_creator_user_id = current_post[ "post_creator_user_ID" ]
-                current_post_datestart = current_post[ "post_datestart" ] # this is the date the post was published.
-                current_post_datecreated = current_post[ "post_datecreated" ]
-                current_post_status = current_post[ "post_status" ]
-                current_post_locale = current_post[ "post_locale" ]
-                current_post_content = current_post[ "post_content" ]
-                current_post_title = current_post[ "post_title" ]
-                current_post_urltitle = current_post[ "post_urltitle" ]
-                current_post_main_cat_id = current_post[ "post_main_cat_ID" ]
-                current_post_views = current_post[ "post_views" ]
-                current_post_wordcount = current_post[ "post_wordcount" ]
-
-                # for now, just output.
-                print( "- current post: " + str( current_post_id ) + " - " + current_post_title + " - " + current_post_urltitle + " - " + str( current_post_datestart ) )
-                
-                # check if item already exists.
-                try:
-
-                    # try to get item object.                
-                    current_item_model = Item.objects.all().get( post_id = current_post_id )
-                    print( "    - found existing." )
-                
-                except Exception, e:
-                
-                    # not found - create new instance.
-                    current_item_model = Item()
-                    print( "    - created new ( " + str( e ) + " )." )
-                
-                #-- END check to see if item already is stored. --#
-
-                #---------------------------------------------------------------#
-                # set values.
-                #---------------------------------------------------------------#
-                
-                # ===> channel = models.ForeignKey( Channel )
-                current_item_model.channel = channel_IN
-                
-                # ==> post_id = models.IntegerField( blank = True, null = True )
-                current_item_model.post_id = current_post_id
-                current_item_model.comment_status = Item.INTERACTION_STATUS_CLOSED
-                
-                # ==> post_status = models.CharField( max_length = 255, blank = True, null = True, default = POST_STATUS_PUBLISH )
-                
-                # is post published?
-                if ( current_post_status == self.B2E_POST_STATUS_PUBLISHED ):
-                
-                    # yes - set it to publish in WordPress
-                    current_item_model.status = Item.POST_STATUS_PUBLISH
-                    
-                else:
-                
-                    # no - set it to draft in WordPress
-                    current_item_model.status = Item.POST_STATUS_DRAFT
-                    
-                #-- END check of status of post. --#
-                
-                # ==> post_name = models.CharField( max_length = 255, blank = True, null = True )
-                # slug - convert underscores in the current_post_urltitle to hyphens.
-
-                current_item_model.post_name = current_post_urltitle.replace( "_", "-" )
-                
-                # ==> post_date_time = models.DateTimeField( blank = True, null = True )
-                # get and parse publication date.
-                pub_date = current_post_datestart
-                current_item_model.post_date_time = pub_date
-
-                # ==> pubdate = models.CharField( max_length = 255, blank = True, null = True )
-                # ==> pub_date_time = models.DateTimeField( blank = True, null = True )
-                # convert post date to the following format: Sun, 01 Aug 2010 16:42:26 +0000 - could use either date, just get offset right (+-HHMM - GMT = +0000, EST = -0500)
-                # RSS spec: http://cyber.law.harvard.edu/rss/rss.html#optionalChannelElements
-                # RSS date format = http://asg.web.cmu.edu/rfc/rfc822.html#sec-5
-                current_item_model.pubdate = pub_date.strftime( self.RSS_DATE_STRFTIME_FORMAT + " " + self.time_zone )
-                current_item_model.pub_date_time = pub_date
-
-                # ==> post_date_time_gmt = models.DateTimeField( blank = True, null = True )
-                # add 5 hours for GMT.
-                my_tz_offset = self.time_zone_offset
-                
-                # convert to seconds
-                my_tz_offset_seconds = my_tz_offset * 3600
-                
-                # invert, since we are converting from local to GMT, not the
-                #    other way around.
-                my_tz_offset_seconds = my_tz_offset_seconds * -1
-
-                # create timedelta for offset.
-                timedelta_time_zone_offset = datetime.timedelta( 0, my_tz_offset_seconds )
-                
-                # convert pub date to GMT
-                pub_date_GMT = pub_date + timedelta_time_zone_offset
-                
-                # store it.
-                current_item_model.post_date_time_gmt = pub_date_GMT
-                
-                # parse 
-                pub_date_year = pub_date.strftime( "%Y" )
-                pub_date_month = pub_date.strftime( "%m" )
-                pub_date_day = pub_date.strftime( "%d" )
-                
-                # Link and URL
-                # sample - http://community.detroitnews.com/blogs/index.php/neighborhood/2013/03/28/another_blessing
-                current_post_url = "http://community.detroitnews.com/blogs/index.php/neighborhood/" + pub_date_year + "/" + pub_date_month + "/" + pub_date_day + "/" + current_post_urltitle
-                
-                # ==> link = models.URLField( max_length = 255, blank = True, null = True )
-                current_item_model.link = current_post_url
-
-                # ==> guid = models.CharField( max_length = 255, blank = True, null = True )
-                # sample - http://community.detroitnews.com/blogs/index.php?title=another_blessing
-                current_post_guid = "http://community.detroitnews.com/blogs/index.php?title=" + current_post_urltitle
-                current_item_model.guid = current_post_guid
-                
-                # ==> title = models.CharField( max_length = 255, blank = True, null = True )
-                current_item_model.title = current_post_title
-
-                # ==> content_encoded = models.TextField( blank = True, null = True )
-                # ==> excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
-                # locate "MORE" in post.
-                # take everything before "MORE" and place it in excerpt.
-                # then, remove "MORE" and surrounding HTML from complete post, store result in content_encoded.
-                # - Q - Do we need to URL encode before storing?
-
-                # save item.
-                current_item_model.save()
-            
-                #---------------------------------------------------------------#
-                # Author
-                #---------------------------------------------------------------#
-
-                # ==> creators = models.ManyToManyField( Author, blank = True, null = True )
-                
-                #---------------------------------------------------------------#
-                # Categories (main, other)
-                #---------------------------------------------------------------#
-
-                # ==> categories = models.ManyToManyField( Category, blank = True, null = True )
-                
-                # need method for processing post categories.
-                
-                # main category?
-                if ( ( current_post_main_cat_id ) and ( current_post_main_cat_id != None ) and ( current_post_main_cat_id != "" ) and ( isinstance( current_post_main_cat_id, numbers.Integral ) == True ) and ( current_post_main_cat_id > 0 ) ):
-
-                    # check if main category already exists (it should).
-                    try:
-    
-                        # try to get category.                
-                        current_cat_model = Category.objects.all().get( term_id = current_post_main_cat_id )
-                        print( "    - found existing category." )
-                    
-                    except Exception, e:
-                    
-                        # not found - create new instance, hopefully it will get
-                        #    imported later, updated.
-                        current_cat_model = Category()
-                        current_cat_model.term_id = current_cat_parent_ID
-                        current_cat_model.name = current_cat_parent_ID
-                        current_cat_model.nice_name = current_cat_parent_ID
-                        current_cat_model.save()
-                        print( "    - created new category ( " + str( e ) + "." )
-                    
-                    #-- END check to see if category already is stored. --#
-    
-                    # store parent if one present
-                    # current_cat_model.parent_category = parent_cat_model
-
-                #-- END check to see if parent category ID. --#
-
-                # Fields we aren't setting (or are leaving set to default):
-                # - guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
-                # - description = models.TextField( blank = True, null = True, default = "" )
-                # - comment_status = models.CharField( max_length = 255, choices = INTERACTION_STATUSES, blank = True, default = INTERACTION_STATUS_CLOSED )
-                # - ping_status = models.CharField( max_length = 255, choices = INTERACTION_STATUSES, blank = True, default = INTERACTION_STATUS_CLOSED )
-                # - post_parent = models.IntegerField( blank = True, null = True, default = 0 )
-                # - menu_order = models.IntegerField( blank = True, null = True, default = 0 )
-                # - post_type = models.CharField( max_length = 255, blank = True, null = True, default = ITEM_TYPE_POST )
-                # - post_password = models.CharField( max_length = 255, blank = True, null = True )
-                # - is_sticky = models.BooleanField( default = False )
-                # - attachment_URL = models.URLField( max_length = 255, blank = True, null = True )
-                # - tags = models.ManyToManyField( Tag, blank = True, null = True )
-                
-                # save item.
-                #current_item_model.save()
+                # process post
+                self.process_post( current_post, channel_IN )
             
             #-- END loop over posts. --#
             
