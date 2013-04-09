@@ -8,6 +8,7 @@ class Batch( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
+    slug = models.CharField( max_length = 255 )
     title = models.CharField( max_length = 255, blank = True, null = True )
     description = models.TextField( blank = True, null = True )
     notes = models.TextField( blank = True, null = True )
@@ -102,7 +103,7 @@ class Category( models.Model ):
     # instance members
     #----------------------------------------------------------------------
 
-    term_id = models.IntegerField( blank = True, null = True )
+    term_id = models.IntegerField()
     nice_name = models.CharField( max_length = 255 )
     parent_category = models.ForeignKey( 'self', blank = True, null = True )
     name = models.CharField( max_length = 255 )
@@ -206,6 +207,7 @@ class Channel( models.Model ):
     title = models.CharField( max_length = 255, blank = True, null = True )
     link = models.URLField( max_length = 255, blank = True, null = True )
     description = models.TextField( blank = True, null = True )
+    pubdate = models.CharField( max_length = 255, blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
     generator = models.CharField( max_length = 255, blank = True, null = True )
     wxr_version = models.CharField( max_length = 255, blank = True, null = True )
@@ -329,13 +331,14 @@ class Item( models.Model ):
     channel = models.ForeignKey( Channel )
     title = models.CharField( max_length = 255, blank = True, null = True )
     link = models.URLField( max_length = 255, blank = True, null = True )
+    pubdate = models.CharField( max_length = 255, blank = True, null = True )
     pub_date_time = models.DateTimeField( blank = True, null = True )
     creators = models.ManyToManyField( Author, blank = True, null = True )
     guid = models.CharField( max_length = 255, blank = True, null = True )
     guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
-    description = models.TextField( blank = True, null = True )
+    description = models.TextField( blank = True, null = True, default = "" )
     content_encoded = models.TextField( blank = True, null = True )
-    excerpt_encoded = models.TextField( blank = True, null = True )
+    excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
     post_id = models.IntegerField( blank = True, null = True )
     post_date_time = models.DateTimeField( blank = True, null = True )
     post_date_time_gmt = models.DateTimeField( blank = True, null = True )
@@ -387,7 +390,7 @@ class PostMetaData( models.Model ):
 
     # Meta-data for this class.
     class Meta:
-        ordering = [ 'name' ]
+        ordering = [ 'item' ]
 
     #----------------------------------------------------------------------
     # methods
@@ -430,7 +433,7 @@ class Comment( models.Model ):
 
     # Meta-data for this class.
     class Meta:
-        ordering = [ 'comment_date_time' ]
+        ordering = [ '-comment_date_time' ]
 
     #----------------------------------------------------------------------
     # methods
