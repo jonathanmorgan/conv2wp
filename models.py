@@ -195,6 +195,16 @@ class Term( models.Model ):
 # Channel model
 class Channel( models.Model ):
 
+
+    #----------------------------------------------------------------------
+    # declaring a few "constants"
+    #----------------------------------------------------------------------
+
+    # status messages.
+    STATUS_SUCCESS = "Success!"
+    STATUS_PREFIX_ERROR = "ERROR - "
+
+
     #----------------------------------------------------------------------
     # instance members
     #----------------------------------------------------------------------
@@ -248,6 +258,74 @@ class Channel( models.Model ):
     #----------------------------------------------------------------------
     # methods
     #----------------------------------------------------------------------
+
+
+    def add_author( self, author_IN, *args, **kwargs ):
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        my_author_set = None
+        author_id = -1
+        author_rs = None
+        author_rs_count = -1
+        
+        # get author set.
+        my_author_set = self.authors
+        
+        # get author's ID.
+        author_id = author_IN.id
+
+        # check to see if author is already associated.
+        author_rs = my_author_set.filter( pk = author_id )
+        
+        # got anything?
+        author_rs_count = author_rs.count()
+        if ( author_rs_count <= 0 ):
+        
+            # no - associate author with this instance.
+            my_author_set.add( author_IN )
+
+        #-- END check to make sure the author isn't already in there. --#
+ 
+        return status_OUT
+    
+    #-- END method add_author() --#
+
+
+    def add_category( self, category_IN, *args, **kwargs ):
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        my_category_set = None
+        category_id = -1
+        category_rs = None
+        category_rs_count = -1
+        
+        # get category set.
+        my_category_set = self.categories
+        
+        # get category's ID.
+        category_id = category_IN.id
+
+        # check to see if category is already associated.
+        category_rs = my_category_set.filter( pk = category_id )
+        
+        # got anything?
+        category_rs_count = category_rs.count()
+        if ( category_rs_count <= 0 ):
+        
+            # no - associate category with this instance.
+            my_category_set.add( category_IN )
+
+        #-- END check to make sure the category isn't already in there. --#
+ 
+        return status_OUT
+    
+    #-- END method add_category() --#
 
 
     def __unicode__( self ):
@@ -327,6 +405,10 @@ class Item( models.Model ):
     ITEM_TYPE_POST = "post"
     ITEM_TYPE_PAGE = "page"
     ITEM_TYPE_ATTACHMENT = "attachment"
+    
+    # status messages.
+    STATUS_SUCCESS = "Success!"
+    STATUS_PREFIX_ERROR = "ERROR - "
 
 
     #----------------------------------------------------------------------
@@ -363,6 +445,80 @@ class Item( models.Model ):
     #----------------------------------------------------------------------
     # methods
     #----------------------------------------------------------------------
+
+
+    def add_author( self, author_IN, *args, **kwargs ):
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        my_author_set = None
+        author_id = -1
+        author_rs = None
+        author_rs_count = -1
+        
+        # get author set.
+        my_author_set = self.creators
+        
+        # get author's ID.
+        author_id = author_IN.id
+
+        # check to see if author is already associated.
+        author_rs = my_author_set.filter( pk = author_id )
+        
+        # got anything?
+        author_rs_count = author_rs.count()
+        if ( author_rs_count <= 0 ):
+        
+            # no - associate author with this instance.
+            my_author_set.add( author_IN )
+
+        #-- END check to make sure the author isn't already in there. --#
+ 
+        # add to list of authors associated with current channel.
+        self.channel.add_author( author_IN )
+        
+        return status_OUT
+    
+    #-- END method add_author() --#
+
+
+    def add_category( self, category_IN, *args, **kwargs ):
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        my_category_set = None
+        category_id = -1
+        category_rs = None
+        category_rs_count = -1
+        
+        # get category set.
+        my_category_set = self.categories
+        
+        # get category's ID.
+        category_id = category_IN.id
+
+        # check to see if category is already associated.
+        category_rs = my_category_set.filter( pk = category_id )
+        
+        # got anything?
+        category_rs_count = category_rs.count()
+        if ( category_rs_count <= 0 ):
+        
+            # no - associate category with this instance.
+            my_category_set.add( category_IN )
+
+        #-- END check to make sure the category isn't already in there. --#
+ 
+        # add to list of categories associated with current channel.
+        self.channel.add_category( category_IN )
+        
+        return status_OUT
+    
+    #-- END method add_category() --#
 
 
     def __unicode__( self ):
@@ -413,6 +569,8 @@ class Comment( models.Model ):
 
     COMMENT_STATUS_APPROVED = True
     COMMENT_STATUS_NOT_APPROVED = False
+    
+    COMMENT_TYPE_COMMENT = "comment"
 
     #----------------------------------------------------------------------
     # instance members

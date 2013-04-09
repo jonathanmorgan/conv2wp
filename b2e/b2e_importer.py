@@ -14,7 +14,11 @@ from conv2wp.models import Author
 from conv2wp.models import Batch
 from conv2wp.models import Category
 from conv2wp.models import Channel
+from conv2wp.models import Comment
 from conv2wp.models import Item
+
+# python_utils imports
+from python_utilities.strings.string_helper import StringHelper
 
 
 #===============================================================================#
@@ -36,6 +40,15 @@ class B2E_Importer():
     B2E_POST_STATUS_DRAFT = "draft"
     
     RSS_DATE_STRFTIME_FORMAT = "%a, %d %b %Y %H:%M:%S"
+    
+    # values that can be in user_idmode field
+    B2E_USER_DISPLAY_TYPE_NICKNAME = "nickname" # WHEN 'nickname' THEN u.user_nickname
+    B2E_USER_DISPLAY_TYPE_LOGIN = "login" # WHEN 'login' THEN u.user_login
+    B2E_USER_DISPLAY_TYPE_NAMEFL = "namefl" # WHEN 'namefl' THEN CONCAT(u.user_firstname, ' ', u.user_lastname)
+    B2E_USER_DISPLAY_TYPE_NAMELF = "namelf" # WHEN 'namelf' THEN CONCAT(u.user_lastname, ' ', u.user_firstname)
+    B2E_USER_DISPLAY_TYPE_FIRSTNAME = "firstname" # WHEN 'firstname' THEN u.user_firstname
+    B2E_USER_DISPLAY_TYPE_LASTNAME = "lastname" # WHEN 'lastname' THEN u.user_lastname
+
     
 
     #---------------------------------------------------------------------------#
@@ -73,6 +86,12 @@ class B2E_Importer():
     @classmethod
     def test_class( cls, password_IN = "", slug_IN = "" ):
         
+        # return reference
+        instance_OUT = None
+        
+        # declare variables
+        status_message = ""
+        
         # create instance
         b2e_importer = cls()
         
@@ -93,7 +112,15 @@ class B2E_Importer():
         b2e_importer.time_zone_offset = -5
         
         # run import for blog 14
-        b2e_importer.import_b2e( slug_IN, 14 )        
+        status_message = b2e_importer.import_b2e( slug_IN, 14 )
+
+        # print the message
+        print( status_message )
+        
+        # return instance
+        instance_OUT = b2e_importer
+        
+        return instance_OUT
         
     #-- END class method test_class() --#
     
@@ -191,6 +218,182 @@ class B2E_Importer():
     #-- END method connect_to_database() --#
 
 
+    def get_conv2wp_author( self, author_b2e_id_IN, *args, **kwargs ):
+    
+        '''
+        Accepts author ID (B2E user ID).  First, checks to see if an author 
+           exists for this User ID.  If yes, retrieves it. If no, pulls author
+           information from B2E, uses it to create an Author instance, saves the
+           instance, then returns it.
+           
+        Post-conditions: If no Author exists for E2 user ID passed in, creates
+           Author instance and stores it in database.
+        '''
+    
+        # return reference
+        instance_OUT = None
+        
+        # declare variables
+        sql_select_user = ""
+        my_db_cursor = None
+        result_count = -1
+        query_result = None
+        table_name_prefix = ""
+        author_user_id = ""
+        author_user_login = ""
+        author_user_email = ""
+        author_user_first_name = ""
+        author_user_last_name = ""
+        author_user_nickname = ""
+        author_user_idmode = ""
+        author_display_name = ""
+        
+        # try to find author by their E2 ID.
+        try:
+        
+            # Try to get Author.
+            instance_OUT = Author.objects.all().get( original_user_id = author_b2e_id_IN )
+        
+        except Exception, e:
+        
+            # not found - retrieve author information from B2E database.
+
+            # retrieve database cursor.
+            my_db_cursor = self.get_database_cursor()
+            
+            # get table prefix
+            table_name_prefix = self.db_table_name_prefix
+            
+            # create query to retrieve posts and author information.
+            sql_select_user = "SELECT * FROM " + table_name_prefix + "users WHERE user_ID = " + str( author_b2e_id_IN ) + ";"
+            
+            # execute query
+            try:
+    
+                # execute query and retrieve results        
+                my_db_cursor.execute( sql_select_user )
+                
+                # got something?
+                result_count = my_db_cursor.rowcount
+                if ( result_count > 0 ):
+
+                    # got something.  Got one?
+                    if ( result_count > 1 ):
+                    
+                        # more than one match.  Error.
+                        print( self.STATUS_PREFIX_ERROR + "More than one user matches ID " + str( author_b2e_id_IN ) + ".  That should be impossible..." )
+                        
+                    #-- END sanity check. --#
+                        
+                    # get single row (assume we won't have multiple)
+                    query_result = my_db_cursor.fetchone()
+
+                    # create and populate Author instance.
+                    instance_OUT = Author()
+
+                    # retrieve Author values we will use.
+                    author_user_id = query_result[ "user_ID" ]
+                    author_user_login = query_result[ "user_login" ]
+                    author_user_email = query_result[ "user_email" ]
+                    author_user_first_name = query_result[ "user_firstname" ]
+                    author_user_last_name = query_result[ "user_lastname" ]
+                    author_user_nickname = query_result[ "user_nickname" ]
+                    author_user_idmode = query_result[ "user_idmode" ]
+
+
+                    # ==> original_user_id = models.IntegerField()
+                    instance_OUT.original_user_id = author_user_id
+
+                    # ==> login = models.CharField( max_length = 255, blank = True, null = True )
+                    instance_OUT.login = author_user_login
+
+                    # ==> email = models.CharField( max_length = 255, blank = True, null = True )
+                    instance_OUT.email = author_user_email
+
+                    # ==> first_name = models.CharField( max_length = 255, blank = True, null = True )
+                    instance_OUT.first_name = author_user_first_name
+                    
+                    # ==> last_name = models.CharField( max_length = 255, blank = True, null = True )
+                    instance_OUT.last_name = author_user_last_name
+
+                    # ==> display_name = models.CharField( max_length = 255, blank = True, null = True )
+                    
+                    # set display name based on idmode value
+                    if ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NICKNAME ):
+                    
+                        # set display name to nickname
+                        my_display_name = author_user_nickname
+                        
+                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_LOGIN ):
+                    
+                        # set display name to login name
+                        my_display_name = author_user_login
+                        
+                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NAMEFL ):
+                    
+                        # set display name to first name, last name
+                        my_display_name = author_user_first_name + " " + author_user_last_name
+                        
+                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NAMELF ):
+                    
+                        # set display name to last name, first name
+                        my_display_name = author_user_last_name + " " + author_user_first_name
+                        
+                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_FIRSTNAME ):
+                    
+                        # set display name to first name
+                        my_display_name = author_user_first_name
+                        
+                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_LASTNAME ):
+                    
+                        # set display name to last name
+                        my_display_name = author_user_last_name
+                        
+                    else:
+                    
+                        # if nothing set, use nickname.
+                        my_display_name = author_user_nickname
+                    
+                    #-- END check to see what we use as display name. --#
+                    
+                    # set display name
+                    instance_OUT.display_name = my_display_name
+
+                    # Fields we aren't populating.
+                    # - middle_name = models.CharField( max_length = 255, blank = True, null = True )
+                    # - suffix = models.CharField( max_length = 255, blank = True, null = True )
+                    # - description = models.TextField( blank = True, null = True )
+                    # - notes = models.TextField( blank = True, null = True )
+                    # - create_date_time = models.DateTimeField( auto_now_add = True )
+                    # - update_date_time = models.DateTimeField( auto_now = True )
+                    # - last_export_date_time = models.DateTimeField( blank = True, null = True )
+                    
+                    # save it.
+                    instance_OUT.save()                    
+                    
+                else:
+                
+                    # No match - return None
+                    print( self.STATUS_PREFIX_ERROR + "No user matches ID " + str( author_b2e_id_IN ) + "." )
+                    instance_OUT = None
+                    
+                #-- END check to see if query found B2E user. --#
+                
+            except Exception, e:
+            
+                # Database exception.  Output error message, return None.
+                print( self.STATUS_PREFIX_ERROR + "Database error looking for B2E user " + str( author_b2e_id_IN ) + " - Exception message: " + str( e ) )
+                instance_OUT = None
+            
+            #-- END try/except around author query --#
+        
+        #-- END try/except around retrieving Author --#
+        
+        return instance_OUT
+    
+    #-- END method get_conv2wp_author() --#
+
+
     def get_conv2wp_batch( self, slug_IN, blog_id_IN = -1, *args, **kwargs ):
     
         '''
@@ -242,6 +445,142 @@ class B2E_Importer():
         return instance_OUT
     
     #-- END method get_conv2wp_batch() --#
+
+
+    def get_conv2wp_category( self, category_b2e_id_IN, *args, **kwargs ):
+    
+        '''
+        Accepts B2E category ID.  First, checks to see if a Category
+           exists for this ID.  If yes, retrieves it. If no, pulls category
+           information from B2E, uses it to create a Category instance, saves the
+           instance, then returns it.
+           
+        Post-conditions: If no Category exists for E2 ID passed in, creates
+           Category instance and stores it in database.
+        '''
+    
+        # return reference
+        instance_OUT = None
+        
+        # declare variables
+        me = "get_conv2wp_category"
+        sql_select_category = ""
+        my_db_cursor = None
+        result_count = -1
+        query_result = None
+        table_name_prefix = ""
+        current_cat_name = ""
+        current_cat_ID = -1
+        current_cat_parent_ID = -1
+        current_cat_blog_ID = -1
+        current_cat_description = ""
+
+        # try to find Category by its B2E ID.
+        try:
+        
+            # Try to get Category.
+            instance_OUT = Category.objects.all().get( term_id = category_b2e_id_IN )
+
+            print( "    - found existing." )
+        
+        except Exception, e:
+        
+            # not found - retrieve category information from B2E database.
+            print( "    - created new ( " + str( e ) + " )." )
+
+            # retrieve database cursor.
+            my_db_cursor = self.get_database_cursor()
+            
+            # get table prefix
+            table_name_prefix = self.db_table_name_prefix
+            
+            # create query to retrieve category information.
+            sql_select_category = "SELECT * FROM " + table_name_prefix + "categories WHERE cat_ID = " + str( category_b2e_id_IN ) + ";"
+
+            #SELECT cat_name, cat_ID, cat_parent_ID, cat_blog_ID, cat_description FROM " + table_name_prefix + "categories
+
+            # execute query
+            try:
+    
+                # execute query and retrieve results        
+                my_db_cursor.execute( sql_select_category )
+                
+                # got something?
+                result_count = my_db_cursor.rowcount
+                if ( result_count > 0 ):
+
+                    # got something.  Got one?
+                    if ( result_count > 1 ):
+                    
+                        # more than one match.  Error.
+                        print( self.STATUS_PREFIX_ERROR + "More than one category matches ID " + str( category_b2e_id_IN ) + ".  That should be impossible..." )
+                        
+                    #-- END sanity check. --#
+                        
+                    # get single row (assume we won't have multiple)
+                    query_result = my_db_cursor.fetchone()
+
+                    # create and populate Category instance.
+                    instance_OUT = Category()
+
+                    # load values we need.
+                    current_cat_name = query_result[ "cat_name" ]
+                    current_cat_ID = query_result[ "cat_ID" ]
+                    current_cat_parent_ID = query_result[ "cat_parent_ID" ]
+                    current_cat_blog_ID = query_result[ "cat_blog_ID" ]
+                    current_cat_description = query_result[ "cat_description" ]
+                
+                    # output.
+                    print( "- current category: " + str( current_cat_ID ) + " - " + current_cat_name + " - " + str( current_cat_parent_ID ) )
+ 
+                    # set values.
+                    instance_OUT.term_id = current_cat_ID
+                    instance_OUT.name = current_cat_name
+                    instance_OUT.description = current_cat_description
+                    
+                    # nice name - all lower-case, spaces and underscores replaced
+                    #    by hyphens.
+                    current_cat_nicename = current_cat_name.strip()
+                    current_cat_nicename = current_cat_nicename.lower()
+                    current_cat_nicename = current_cat_nicename.replace( " ", "-" )
+                    current_cat_nicename = current_cat_nicename.replace( "_", "-" )
+                    instance_OUT.nice_name = current_cat_nicename
+                    
+                    # parent category ID?
+                    if ( ( current_cat_parent_ID ) and ( current_cat_parent_ID != None ) and ( current_cat_parent_ID != "" ) and ( isinstance( current_cat_parent_ID, numbers.Integral ) == True ) and ( current_cat_parent_ID > 0 ) ):
+    
+                        # get parent category
+                        parent_cat_model = self.get_conv2wp_category( current_cat_parent_ID )
+        
+                        # store parent if one present
+                        instance_OUT.parent_category = parent_cat_model
+    
+                    #-- END check to see if parent category ID. --#
+                    
+                    # save category.
+                    instance_OUT.save()
+
+                else:
+                
+                    # No match - return None
+                    print( self.STATUS_PREFIX_ERROR + "In " + me + "(): No category matches ID " + str( category_b2e_id_IN ) + "." )
+                    instance_OUT = None
+                    
+                #-- END check to see if query found B2E user. --#
+                
+            except Exception, e:
+            
+                # Database exception.  Output error message, return None.
+                print( self.STATUS_PREFIX_ERROR + "In " + me + "(): Database error looking for B2E category " + str( category_b2e_id_IN ) + " - Exception message: " + str( e ) )
+                instance_OUT = None
+            
+            #-- END try/except around category query --#
+        
+        #-- END try/except around retrieving Category --#
+        
+        return instance_OUT
+    
+    #-- END method get_conv2wp_category() --#
 
 
     def get_conv2wp_channel( self, batch_IN, blog_id_IN = -1, *args, **kwargs ):
@@ -486,14 +825,8 @@ class B2E_Importer():
         sql_select_categories = ""
         query_results = None
         current_category = None
-        current_cat_name = ""
-        current_cat_nicename = ""
         current_cat_ID = ""
-        current_cat_parent_ID = ""
-        current_cat_blog_ID = ""
-        current_cat_description = ""
         current_cat_model = None
-        parent_cat_model = None
         
         # retrieve database cursor.
         my_db_cursor = self.get_database_cursor()
@@ -526,69 +859,10 @@ class B2E_Importer():
             for current_category in query_results:
                 
                 # retrieve category values
-                current_cat_name = current_category[ "cat_name" ]
                 current_cat_ID = current_category[ "cat_ID" ]
-                current_cat_parent_ID = current_category[ "cat_parent_ID" ]
-                current_cat_blog_ID = current_category[ "cat_blog_ID" ]
-                current_cat_description = current_category[ "cat_description" ]
                 
-                # for now, just output.
-                print( "- current category: " + str( current_cat_ID ) + " - " + current_cat_name + " - " + str( current_cat_parent_ID ) )
-                
-                # check if category already exists.
-                try:
-
-                    # try to get category.                
-                    current_cat_model = Category.objects.all().get( term_id = current_cat_ID )
-                    print( "    - found existing." )
-                
-                except Exception, e:
-                
-                    # not found - create new instance.
-                    current_cat_model = Category()
-                    print( "    - created new ( " + str( e ) + " )." )
-                
-                #-- END check to see if category already is stored. --#
-
-                # set values.
-                current_cat_model.term_id = current_cat_ID
-                current_cat_model.name = current_cat_name
-                
-                # nice name - all lower-case, spaces and underscores replaced
-                #    by hyphens.
-                current_cat_nicename = current_cat_name.strip()
-                current_cat_nicename = current_cat_nicename.lower()
-                current_cat_nicename = current_cat_nicename.replace( " ", "-" )
-                current_cat_nicename = current_cat_nicename.replace( "_", "-" )
-                current_cat_model.nice_name = current_cat_nicename
-                
-                # parent category ID?
-                if ( ( current_cat_parent_ID ) and ( current_cat_parent_ID != None ) and ( current_cat_parent_ID != "" ) and ( isinstance( current_cat_parent_ID, numbers.Integral ) == True ) and ( current_cat_parent_ID > 0 ) ):
-
-                    # check if parent category already exists.
-                    try:
-    
-                        # try to get category.                
-                        parent_cat_model = Category.objects.all().get( term_id = current_cat_parent_ID )
-                        print( "    - found existing parent." )
-                    
-                    except Exception, e:
-                    
-                        # not found - create new instance, hopefully it will get
-                        #    imported later, updated.
-                        parent_cat_model = Category()
-                        parent_cat_model.term_id = current_cat_parent_ID
-                        parent_cat_model.name = current_cat_parent_ID
-                        parent_cat_model.nice_name = current_cat_parent_ID
-                        parent_cat_model.save()
-                        print( "    - created new parent ( " + str( e ) + " )." )
-                    
-                    #-- END check to see if category already is stored. --#
-    
-                    # store parent if one present
-                    current_cat_model.parent_category = parent_cat_model
-
-                #-- END check to see if parent category ID. --#
+                # get category instance.
+                current_cat_model = self.get_conv2wp_category( current_cat_ID )
                 
                 # save category.
                 current_cat_model.save()
@@ -638,6 +912,7 @@ class B2E_Importer():
         current_post_wordcount = -1
         current_post_url = ""
         current_post_guid = ""
+        current_post_cleaned_content = ""
         
         # variables to hold pieces of pub date.
         pub_date = None
@@ -656,9 +931,15 @@ class B2E_Importer():
         more_index = -1
         content_before_more = ""
         content_after_more = ""
+
+        # variables for authors
+        author_status = ""
         
         # variables for categories
-        current_cat_model = None
+        category_status = ""
+        
+        # variables for comments
+        comment_status = ""
         
         # place row passed in into current_post
         current_post = current_post_row_IN
@@ -777,7 +1058,7 @@ class B2E_Importer():
         current_item_model.guid = current_post_guid
         
         # ==> title = models.CharField( max_length = 255, blank = True, null = True )
-        current_item_model.title = current_post_title
+        current_item_model.title = StringHelper.unicode_escape( current_post_title )
 
         # ==> content_encoded = models.TextField( blank = True, null = True )
         # ==> excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
@@ -796,14 +1077,22 @@ class B2E_Importer():
             current_item_model.excerpt_encoded = content_before_more
             
             # then, remove "<!--more-->" from complete post, store result in content_encoded.
-            current_item_model.content_encoded = content_before_more + "\n" + content_after_more
+            current_post_cleaned_content = content_before_more + "\n" + content_after_more
             
         else:
         
             # no <!--more--> - just store the content.
-            current_item_model.content_encoded = current_post_content
+            current_post_cleaned_content  = current_post_content
             
         #-- END check to see if we found "<!--more-->" --#
+        
+        # escape unicode crap.
+        current_post_cleaned_content = StringHelper.unicode_escape( current_post_cleaned_content )
+
+        # !TODO - put p-tags around paragraphs.
+        
+        # set content encoded.
+        current_item_model.content_encoded = current_post_cleaned_content
 
         # save item.
         current_item_model.save()
@@ -813,51 +1102,23 @@ class B2E_Importer():
         #---------------------------------------------------------------#
 
         # ==> creators = models.ManyToManyField( Author, blank = True, null = True )
-        # !TODO process authors
+        author_status = self.process_post_author( current_post_creator_user_id, current_item_model )
+        print( "    - Author status: " + author_status )
         
         #---------------------------------------------------------------#
         # Categories (main, other)
         #---------------------------------------------------------------#
 
-        # !TODO process categories
-
         # ==> categories = models.ManyToManyField( Category, blank = True, null = True )
-        
-        # need method for processing post categories.
-        
-        # main category?
-        if ( ( current_post_main_cat_id ) and ( current_post_main_cat_id != None ) and ( current_post_main_cat_id != "" ) and ( isinstance( current_post_main_cat_id, numbers.Integral ) == True ) and ( current_post_main_cat_id > 0 ) ):
-
-            # check if main category already exists (it should).
-            try:
-
-                # try to get category.                
-                current_cat_model = Category.objects.all().get( term_id = current_post_main_cat_id )
-                print( "    - found existing category." )
-            
-            except Exception, e:
-            
-                # not found - create new instance, hopefully it will get
-                #    imported later, updated.
-                current_cat_model = Category()
-                current_cat_model.term_id = current_cat_parent_ID
-                current_cat_model.name = current_cat_parent_ID
-                current_cat_model.nice_name = current_cat_parent_ID
-                current_cat_model.save()
-                print( "    - created new category ( " + str( e ) + "." )
-            
-            #-- END check to see if category already is stored. --#
-
-            # store parent if one present
-            # current_cat_model.parent_category = parent_cat_model
-
-        #-- END check to see if parent category ID. --#
+        category_status = self.process_post_categories( current_post_main_cat_id, current_item_model )
+        print( "    - Category status: " + category_status )
 
         #---------------------------------------------------------------#
         # Comments
         #---------------------------------------------------------------#
 
-        # !TODO process comments.
+        comment_status = self.process_post_comments( current_item_model )
+        print( "    - Comment status: " + comment_status )
 
         # Fields we aren't setting (or are leaving set to default):
         # - guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
@@ -872,7 +1133,7 @@ class B2E_Importer():
         # - attachment_URL = models.URLField( max_length = 255, blank = True, null = True )
         # - tags = models.ManyToManyField( Tag, blank = True, null = True )
         
-        # save item.
+        # save item?
         #current_item_model.save()
 
         return status_OUT
@@ -880,7 +1141,7 @@ class B2E_Importer():
     #-- END method process_post() --#
     
     
-    def process_post_author( self, author_id_IN, item_IN, *args, **kwargs ):
+    def process_post_author( self, author_b2e_id_IN, item_IN, *args, **kwargs ):
     
         '''
         Accepts author ID (B2E user ID), and item for B2E blog post that has been
@@ -905,55 +1166,330 @@ class B2E_Importer():
         query_results = None
         table_name_prefix = ""
         
-        # try to find author by their E2 ID.
-        try:
+        # try to find author by their B2E ID.
+        author_model = self.get_conv2wp_author( author_b2e_id_IN )
         
-            # Try to get Author.
-            author_model = Author.objects.all().get( original_user_id = author_id_IN )
+        # got one?
+        if ( ( author_model ) and ( author_model != None ) ):
         
-        except Exception, e:
-        
-            # !TODO - pick up here!
-            # not found.  Create and save instance.
-            author_model = Author()
+            # got one.  Associate it with item.
+            item_IN.add_author( author_model )
             
-            # retrieve author information from B2E database.
+        else:
+        
+            # could not find author.  Output error message.
+            status_OUT = self.STATUS_PREFIX_ERROR + "Could not find B2E user for ID " + str( author_b2e_id_IN ) + ", so cannot process."
 
-            # retrieve database cursor.
-            my_db_cursor = self.get_database_cursor()
-            
-            # get table prefix
-            table_name_prefix = self.db_table_name_prefix
-            
-            # create query to retrieve posts and author information.
-            sql_select_user = "SELECT * FROM " + table_name_prefix + "users WHERE user_ID = " + author_id_IN + ";"
-            
-            # execute query
-            try:
-    
-                # execute query and retrieve results        
-                my_db_cursor.execute( sql_select_user )
-                query_results = my_db_cursor.fetchall()
-    
-                # loop over categories.
-                for current_post in query_results:
-                    
-                    # process post
-                    self.process_post( current_post, channel_IN )
-                
-                #-- END loop over posts. --#
-                
-            except Exception, e:
-            
-                status_OUT = self.STATUS_PREFIX_ERROR + "Exception message: " + str( e )
-            
-            #-- END try/except around author query --#
-        
-        #-- END try/except around retrieving Author --#
+        #-- END check to see if we got an author for user ID. --#
         
         return status_OUT
     
     #-- END method process_post_author() --#
+
+
+    def process_post_categories( self, post_main_cat_id_IN, item_IN, *args, **kwargs ):
+    
+        '''
+        Accepts post's main category ID and the item that contains the rest of
+           the details on this post.  First retrieves category instance for main
+           category and adds it to item.  Then, looks up all other categories
+           and adds them as well.
+           
+        Post-conditions: If categories are first encountered by this process, it
+           will create them and add them to the database.  It also creates the
+           ties between the categories and the item and channel in which the item
+           resides in the database, as well.
+        '''
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        me = "process_post_categories"
+        main_cat_model = None
+        post_id = -1
+        
+        # database connection variables.
+        my_db_cursor = None
+        table_name_prefix = ""
+        sql_select_categories = ""
+        query_results = None
+        current_category = None
+        current_cat_ID = ""
+        current_cat_model = None
+
+        # get post ID.
+        post_id = item_IN.post_id
+
+        # main category?
+        if ( ( post_main_cat_id_IN ) and ( post_main_cat_id_IN != None ) and ( post_main_cat_id_IN != "" ) and ( isinstance( post_main_cat_id_IN, numbers.Integral ) == True ) and ( post_main_cat_id_IN > 0 ) ):
+
+            # check if main category already exists (it should).
+            main_cat_model = self.get_conv2wp_category( post_main_cat_id_IN )
+
+            # got main category?
+            if ( ( main_cat_model ) and ( main_cat_model != None ) ):
+            
+                # add category to item.
+                item_IN.add_category( main_cat_model )
+                
+                print( "    - In " + me + ": adding category " + str( post_main_cat_id_IN ) + ": " + str( main_cat_model ) + " to item: " + str( post_id ) )
+            
+            else:
+            
+                print( "    - In " + me + ": no category found for ID " + str( post_main_cat_id_IN ) + "." )
+
+            #-- END check to see if we have a main category --#
+            
+        else:
+        
+            print( "    - In " + me + ": no main category ID (value passed in: " + str( post_main_cat_id_IN ) + ")." )
+            
+        #-- END check to see if parent category ID. --#
+
+        # check for other categories!
+
+        # find categories for this post in B2E evo_postcats table.
+        # SELECT * FROM evo_postcats WHERE postcat_post_ID = <post_id>;
+        
+        # retrieve database cursor.
+        my_db_cursor = self.get_database_cursor()
+        
+        # get table prefix
+        table_name_prefix = self.db_table_name_prefix
+        
+        # create query to retrieve categories.
+        sql_select_categories = "SELECT * FROM " + table_name_prefix + "postcats WHERE postcat_post_ID = " + str( post_id ) + " ORDER BY postcat_post_ID, postcat_cat_ID;"
+        
+        # execute query
+        try:
+
+            # execute query and retrieve results        
+            my_db_cursor.execute( sql_select_categories )
+            query_results = my_db_cursor.fetchall()
+
+            # loop over categories.
+            for current_category in query_results:
+                
+                # retrieve category values
+                current_cat_ID = current_category[ "postcat_cat_ID" ]
+                
+                # get category instance.
+                current_cat_model = self.get_conv2wp_category( current_cat_ID )
+                
+                # add category to item.
+                item_IN.add_category( current_cat_model )
+            
+            #-- END loop over categories. --#
+            
+        except Exception, e:
+        
+            status_OUT = self.STATUS_PREFIX_ERROR + "    - In " + me + ": Exception message: " + str( e )
+        
+        #-- END try/except around query --#
+        
+        return status_OUT
+
+    #-- END method process_post_categories() --#
+
+
+    def process_post_comments( self, item_IN, *args, **kwargs ):
+    
+        '''
+        Accepts the item that contains the rest of the details on a given post.
+           Retrieves all comments for the post, creates Comment instances for
+           them, then stores comments in the database, associated with the item.
+           
+        Pre-conditions: Only pulls in published comments.  Others are discarded.
+        
+        Post-conditions: Creates comment records in the database and adds them
+           to the Item.  Does look to see if comment was already added based on
+           comment ID.  If so, does not add again.
+        '''
+    
+        # return reference
+        status_OUT = self.STATUS_SUCCESS
+        
+        # declare variables
+        me = "process_post_comments"
+        post_id = -1
+        
+        # database connection variables.
+        my_db_cursor = None
+        table_name_prefix = ""
+        sql_select_comments = ""
+        query_results = None
+        current_comment = None
+        current_comment_id = -1
+        duplicate_check_rs = None
+        current_comment_model = None
+        current_comment_author_id = -1
+        author_model = None
+        author_display_name = ""
+        author_email = ""
+        current_comment_date = None
+        current_comment_content = ""
+        comment_date_GMT = None
+        current_comment_cleaned = ""
+        
+        # variables to hold pieces of pub date.
+        my_tz_offset = None
+        my_tz_offset_seconds = None
+        timedelta_time_zone_offset = None
+        pub_date_GMT = None
+        pub_date_year = -1
+        pub_date_month = -1
+        pub_date_day = -1
+
+        # get post ID.
+        post_id = item_IN.post_id
+
+        # find comments for this post in B2E evo_comments table.
+        '''
+Reproducing this logic, but not all in SQL:
+SELECT
+    CASE
+        WHEN u.user_ID IS NULL THEN c.comment_author
+        ELSE
+            CASE u.user_idmode
+                WHEN 'nickname' THEN u.user_nickname
+                WHEN 'login' THEN u.user_login
+                WHEN 'namefl' THEN CONCAT(u.user_firstname, ' ', u.user_lastname)
+                WHEN 'namelf' THEN CONCAT(u.user_lastname, ' ', u.user_firstname)
+                WHEN 'firstname' THEN u.user_firstname
+                WHEN 'lastname' THEN u.user_lastname
+                ELSE u.user_nickname
+            END
+        END AS 'author',
+	CASE WHEN u.user_ID IS NULL THEN c.comment_author_email ELSE u.user_email END AS 'author_email',
+	CASE WHEN u.user_ID IS NULL THEN c.comment_author_url ELSE u.user_url END AS 'author_url',
+	comment_id, comment_status, comment_author_IP, comment_content, comment_post_ID, comment_date, comment_karma, comment_type, comment_author_ID
+FROM evo_comments as c
+    LEFT JOIN evo_users as u
+    ON u.user_ID = c.comment_author_id
+WHERE comment_status = 'published'
+    AND comment_post_ID = <post_id>;
+        '''
+
+        # SELECT * FROM evo_comments WHERE comment_status = 'published' AND comment_post_ID = <post_id>;
+        
+        # retrieve database cursor.
+        my_db_cursor = self.get_database_cursor()
+        
+        # get table prefix
+        table_name_prefix = self.db_table_name_prefix
+        
+        # create query to retrieve categories.
+        sql_select_comments = "SELECT * FROM " + table_name_prefix + "comments WHERE comment_status = 'published' AND comment_post_ID = " + str( post_id ) + " ORDER BY comment_date ASC;"
+        
+        # execute query
+        try:
+
+            # execute query and retrieve results        
+            my_db_cursor.execute( sql_select_comments )
+            query_results = my_db_cursor.fetchall()
+
+            # loop over comments.
+            for current_comment in query_results:
+                
+                # retrieve comment ID
+                current_comment_id = current_comment[ "comment_ID" ]
+                
+                # see if it has already been processed.
+                duplicate_check_rs = item_IN.comment_set.filter( comment_id = current_comment_id )
+                if ( duplicate_check_rs.count() <= 0 ):
+                
+                    # no matching comment.  Process it.  Get values.
+                    current_comment_author_id = current_comment[ "comment_author_ID" ]
+                    current_comment_date = current_comment[ "comment_date" ]
+                    current_comment_content = current_comment[ "comment_content" ]
+                    
+                    # create model instance.
+                    current_comment_model = Comment()
+                    
+                    # Set values.
+                    # ==> item = models.ForeignKey( Item )
+                    current_comment_model.item = item_IN
+                    
+                    # ==> comment_id = models.IntegerField( blank = True, null = True )
+                    current_comment_model.comment_id = current_comment_id
+                    
+                    # ==> author_name = models.CharField( max_length = 255, blank = True, null = True )
+                    # ==> author_email = models.CharField( max_length = 255, blank = True, null = True )
+
+                    # for author information, pull in author, use it.
+                    author_model = self.get_conv2wp_author( current_comment_author_id )
+                    if ( ( author_model ) and ( author_model != None ) ):
+                    
+                        author_display_name = author_model.display_name
+                        author_email = author_model.email
+                    
+                    #-- END check for author information --#
+
+                    current_comment_model.author_name = author_display_name
+                    current_comment_model.author_email = author_email
+
+                    # ==> comment_date_time = models.DateTimeField( blank = True, null = True )
+                    current_comment_model.comment_date_time = current_comment_date
+
+                    # ==> comment_date_time_gmt = models.DateTimeField( blank = True, null = True )
+                    # add offset.
+                    my_tz_offset = self.time_zone_offset
+                    
+                    # convert to seconds
+                    my_tz_offset_seconds = my_tz_offset * 3600
+                    
+                    # invert, since we are converting from local to GMT, not the
+                    #    other way around.
+                    my_tz_offset_seconds = my_tz_offset_seconds * -1
+            
+                    # create timedelta for offset.
+                    timedelta_time_zone_offset = datetime.timedelta( 0, my_tz_offset_seconds )
+                    
+                    # convert pub date to GMT
+                    comment_date_GMT = current_comment_date + timedelta_time_zone_offset
+                    
+                    # store it.
+                    current_comment_model.comment_date_time_gmt = comment_date_GMT
+
+                    # ==> content_encoded = models.TextField( blank = True, null = True )
+
+                    # escape unicode crap.
+                    current_comment_cleaned = StringHelper.unicode_escape( current_comment_content )
+            
+                    # !TODO - put p-tags around paragraphs.
+                    
+                    # set content encoded.
+                    current_comment_model.content_encoded = current_comment_cleaned
+
+                    # ==> approved = models.BooleanField( default = False )
+                    current_comment_model.approved = True
+                    
+                    # Fields we aren't setting.
+                    # - author_url = models.CharField( max_length = 255, blank = True, null = True )
+                    # - author_ip = models.CharField( max_length = 255, blank = True, null = True )
+                    # - comment_type = models.CharField( max_length = 255, blank = True, null = True )
+                    # - parent_comment = models.ForeignKey( 'self', blank = True, null = True )
+                    # - comment_author = models.ForeignKey( Author, blank = True, null = True )
+                    
+                    # save the comment.
+                    current_comment_model.save()
+                    
+                    print( "   - In " + me + "(): Adding comment " + str( current_comment_model ) )
+
+                #-- END check to make sure we aren't duplicating comments. --#
+            
+            #-- END loop over categories. --#
+            
+        except Exception, e:
+        
+            status_OUT = self.STATUS_PREFIX_ERROR + "    - In " + me + ": Exception message: " + str( e )
+        
+        #-- END try/except around query --#
+        
+        return status_OUT
+
+    #-- END method process_post_comments() --#
 
 
     def process_posts( self, blog_id_IN = -1, channel_IN = None, *args, **kwargs ):
