@@ -84,7 +84,7 @@ class B2E_Importer():
 
 
     @classmethod
-    def test_class( cls, password_IN = "", slug_IN = "" ):
+    def get_testing_instance( cls, password_IN = "" ):
         
         # return reference
         instance_OUT = None
@@ -103,13 +103,32 @@ class B2E_Importer():
         # initialize channel information
         b2e_importer.channel_title = "Going home: A journal on Detroit's neighborhoods"
         b2e_importer.channel_description = "A Detroit News journal of the city's neighborhoods, starting with the Dobel St. area on the east side, just south of McNichols and east of Van Dyke. "
-        b2e_importer.channel_generator = "jonathan.scott.morgan@gmail.com"
+        b2e_importer.channel_generator = "https://github.com/jonathanmorgan/conv2wp"
         b2e_importer.channel_base_site_url = "http://detroitnews.com"
         b2e_importer.channel_base_blog_url = "http://community.detroitnews.com/blogs/index.php/neighborhood"
         
         # initialize time zone.
         b2e_importer.time_zone = "-0500"
         b2e_importer.time_zone_offset = -5
+        
+        instance_OUT = b2e_importer
+        
+        return instance_OUT
+
+    #-- END method get_testing_instance() --#
+
+
+    @classmethod
+    def test_class( cls, password_IN = "", slug_IN = "" ):
+        
+        # return reference
+        instance_OUT = None
+        
+        # declare variables
+        status_message = ""
+        
+        # create instance
+        b2e_importer = cls.get_testing_instance( password_IN )
         
         # run import for blog 14
         status_message = b2e_importer.import_b2e( slug_IN, 14 )
@@ -124,6 +143,132 @@ class B2E_Importer():
         
     #-- END class method test_class() --#
     
+
+    @classmethod
+    def find_bad_characters( cls, password_IN = "", blog_id_IN = -1, *args, **kwargs ):
+        
+        '''
+        # get posts - if we have a blog ID, limit to that blog.
+        
+        # For each post:
+        # - create Item, load with information from post.
+        # - get author user, add it to Authors.
+        # - get comments for post, store them in Comments, asociated to Item.
+        # - get categories for post, look up and associate them.
+        '''
+
+        # return reference
+        status_OUT = cls.STATUS_SUCCESS
+        
+        # declare variables
+        b2e_importer = None
+        my_db_cursor = None
+        table_name_prefix = ""
+        sql_select_posts = ""
+        post_query_results = None
+        current_post = None
+        current_title = ""
+        current_body = ""
+        current_fail = False
+        fail_list = []
+        fail_count = 0
+        
+        # create instance
+        b2e_importer = cls.get_testing_instance( password_IN )
+        
+        # retrieve database cursor.
+        my_db_cursor = b2e_importer.get_database_cursor()
+        
+        # get table prefix
+        table_name_prefix = b2e_importer.db_table_name_prefix
+        
+        # create query to retrieve posts and author information.
+        sql_select_posts = "SELECT * FROM " + table_name_prefix + "posts ep"
+        sql_select_posts += " INNER JOIN " + table_name_prefix + "categories ec"
+        sql_select_posts += " ON ec.cat_ID = ep.post_main_cat_ID"
+        
+        # got a blog ID?
+        if ( ( blog_id_IN ) and ( blog_id_IN != None ) and ( blog_id_IN != "" ) and ( isinstance( blog_id_IN, numbers.Integral ) == True ) and ( blog_id_IN > 0 ) ):
+    
+            # we do - add where clause.
+            sql_select_posts += " WHERE ec.cat_blog_ID IN ( " + str( blog_id_IN ) + " )"
+            
+        #-- END check to see if ID passed in. --#
+        
+        # then, ORDER_BY.
+        sql_select_posts += " ORDER BY ep.post_datecreated ASC;"
+        
+        # execute query
+        try:
+
+            # execute query and retrieve results        
+            my_db_cursor.execute( sql_select_posts )
+            query_results = my_db_cursor.fetchall()
+
+            # loop over categories.
+            for current_post in query_results:
+                
+                # initialize variables
+                current_fail = False
+
+                # get title and body.
+                current_id = current_post[ "post_ID" ]
+                current_title = current_post[ "post_title" ]
+                current_body = [ "post_content" ]
+                
+                # look in title
+                try:
+                
+                    # decode from utf-8 to ASCII
+                    current_title.decode( 'utf-8' )
+                    
+                except Exception, e:
+                
+                    current_fail = True
+                    fail_count += 1
+                    print( "post " + str( current_id ) + ": Title failed." )
+                
+                #-- END decoding title --#
+
+                try:
+                
+                    # decode from utf-8 to ASCII
+                    current_body.decode( 'utf-8' )
+                    
+                except Exception, e:
+                
+                    current_fail = True
+                    fail_count += 1
+                    print( "post " + str( current_id ) + ": Body failed." )
+
+                #-- END decoding title --#
+                
+                if ( current_fail == True ):
+                
+                    fail_list.append( current_id )
+                    
+                #-- END check to see if fail --#
+            
+            #-- END loop over posts. --#
+            
+        except Exception, e:
+        
+            status_OUT = cls.STATUS_PREFIX_ERROR + "Exception message: " + str( e )
+        
+        #-- END try/except around query --#
+        
+        print( "fail count: " + str( fail_count ) )
+        
+        if ( len( fail_list) > 0 ):
+        
+            status_OUT = cls.STATUS_PREFIX_ERROR + "Failure list: " + str( fail_list )
+        
+        #-- END check for failures --#
+        
+        return status_OUT
+        
+    #-- END method find_bad_characters() --#
+
 
     #---------------------------------------------------------------------------#
     # instance methods
@@ -791,7 +936,7 @@ class B2E_Importer():
         my_channel = self.get_conv2wp_channel( my_batch, blog_id_IN )
         
         # get and save categories.
-        current_status = self.process_categories( blog_id_IN )
+        current_status = self.process_categories( my_channel, blog_id_IN )
         
         # check status
         if ( current_status == self.STATUS_SUCCESS ):
@@ -814,7 +959,7 @@ class B2E_Importer():
     #-- END method import_b2e --#
 
 
-    def process_categories( self, blog_id_IN = -1, *args, **kwargs ):
+    def process_categories( self, channel_IN, blog_id_IN = -1, *args, **kwargs ):
         
         # return reference
         status_OUT = self.STATUS_SUCCESS
@@ -864,8 +1009,8 @@ class B2E_Importer():
                 # get category instance.
                 current_cat_model = self.get_conv2wp_category( current_cat_ID )
                 
-                # save category.
-                current_cat_model.save()
+                # add category to channel.
+                channel_IN.add_category( current_cat_model )
             
             #-- END loop over categories. --#
             
@@ -1403,6 +1548,8 @@ WHERE comment_status = 'published'
                     current_comment_author_id = current_comment[ "comment_author_ID" ]
                     current_comment_date = current_comment[ "comment_date" ]
                     current_comment_content = current_comment[ "comment_content" ]
+                    current_comment_url = current_comment[ "comment_author_url" ]
+                    current_comment_ip_address = current_comment[ "comment_author_IP" ]
                     
                     # create model instance.
                     current_comment_model = Comment()
@@ -1425,9 +1572,15 @@ WHERE comment_status = 'published'
                         author_email = author_model.email
                     
                     #-- END check for author information --#
-
+                    
                     current_comment_model.author_name = author_display_name
                     current_comment_model.author_email = author_email
+
+                    # ==> author_url = models.CharField( max_length = 255, blank = True, null = True )
+                    current_comment_model.author_url = current_comment_url
+                    
+                    # ==> author_ip = models.CharField( max_length = 255, blank = True, null = True )
+                    current_comment_model.author_ip = current_comment_ip_address
 
                     # ==> comment_date_time = models.DateTimeField( blank = True, null = True )
                     current_comment_model.comment_date_time = current_comment_date
@@ -1467,7 +1620,6 @@ WHERE comment_status = 'published'
                     
                     # Fields we aren't setting.
                     # - author_url = models.CharField( max_length = 255, blank = True, null = True )
-                    # - author_ip = models.CharField( max_length = 255, blank = True, null = True )
                     # - comment_type = models.CharField( max_length = 255, blank = True, null = True )
                     # - parent_comment = models.ForeignKey( 'self', blank = True, null = True )
                     # - comment_author = models.ForeignKey( Author, blank = True, null = True )
