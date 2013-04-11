@@ -898,7 +898,7 @@ class Item( models.Model ):
         # !TODO tags
         
         # do we have any categories?
-        category_rs = self.categories.all()
+        category_rs = self.categories.all().order_by( 'parent_category', 'id' )
         category_count = category_rs.count()
         if ( category_count > 0 ):
         

@@ -5,9 +5,11 @@
 # base python imports
 import datetime
 import numbers
+import re
 
 # external modules
 import MySQLdb
+import bs4 # Beautiful Soup HTML parsing.
 
 # conv2wp imports
 from conv2wp.models import Author
@@ -19,7 +21,6 @@ from conv2wp.models import Item
 
 # python_utils imports
 from python_utilities.strings.string_helper import StringHelper
-
 
 #===============================================================================#
 # Class definitions.
@@ -49,7 +50,10 @@ class B2E_Importer():
     B2E_USER_DISPLAY_TYPE_FIRSTNAME = "firstname" # WHEN 'firstname' THEN u.user_firstname
     B2E_USER_DISPLAY_TYPE_LASTNAME = "lastname" # WHEN 'lastname' THEN u.user_lastname
 
-    
+    # replacing old URLs with new URLs.
+    BLOG_URL_OLD_HOST_AND_PATH_1 = "http://community.detroitnews.com/blogs/index.php/neighborhood/"
+    BLOG_URL_OLD_HOST_AND_PATH_2 = "http://community.detnews.com/blogs/index.php/neighborhood/"
+    BLOG_URL_NEW_HOST_AND_PATH = "http://blogs.detroitnews.com/goinghome/"
 
     #---------------------------------------------------------------------------#
     # instance variables
@@ -76,6 +80,7 @@ class B2E_Importer():
     # configuration variables
     time_zone = "-0500"
     time_zone_offset = -5
+    store_excerpt = False
 
     
     #---------------------------------------------------------------------------#
@@ -274,6 +279,204 @@ class B2E_Importer():
     # instance methods
     #---------------------------------------------------------------------------#
 
+
+    def clean_blog_URL( self, content_IN, find_IN, replace_IN, *args, **kwargs ):
+
+        # return reference
+        value_OUT = ""
+        
+        # declare variables
+        soup = None
+        old_host_and_path = ""
+        new_host_and_path = ""
+        re_string = ""
+        re_compiled = None
+        anchor_list = None
+        current_anchor = None
+        old_href_text = None
+        new_href_text = None
+        
+        # store content in return variable.
+        value_OUT = content_IN
+        
+        # make sure we have content before we do anything.
+        if ( ( value_OUT ) and ( value_OUT != None ) and ( value_OUT != "" ) ):
+
+            # get BeautifulSoup instance that contains content.
+            soup = bs4.BeautifulSoup( value_OUT )
+            
+            #--------------------------------------------------------------------
+            # look for http://community.detroitnews.com/blogs/index.php/neighborhood/
+            #--------------------------------------------------------------------
+
+            # prepare filtering regular expression
+            re_string = "^" + find_IN
+            
+            # compile the regular expression.
+            re_compiled = re.compile( re_string )
+            
+            # look for all <a> tags whose href matches that regular expression.
+            anchor_list = soup.findAll( 'a', attrs = { 'href' : re_compiled } )
+            
+            # matches?
+            if ( len( anchor_list ) > 0 ):
+
+                # loop over all
+                for current_anchor in anchor_list:
+                
+                    # get old href text.
+                    old_href_text = current_anchor.get( "href" )
+                    
+                    # change old host and path to new host and path.
+                    new_href_text = old_href_text.replace( find_IN, replace_IN )
+                    
+                    # change "_" to "-"
+                    new_href_text = new_href_text.replace( "_", "-" )
+                    
+                    # then, in original post text, replace old URL with new URL
+                    value_OUT = value_OUT.replace( old_href_text, new_href_text )
+    
+                #-- END loop over anchor list. --#
+                
+            #-- END check to see if any matches. --#
+
+        #-- END check to see if we need to do anything. --#
+        
+        return value_OUT        
+        
+    #-- END method clean_blog_URL()
+
+
+    def clean_blog_URLs( self, content_IN, *args, **kwargs ):
+
+        # return reference
+        value_OUT = ""
+        
+        # declare variables
+        soup = None
+        old_host_and_path = ""
+        new_host_and_path = ""
+        re_string = ""
+        re_compiled = None
+        anchor_list = None
+        current_anchor = None
+        old_href_text = None
+        new_href_text = None
+        
+        # store content in return variable.
+        value_OUT = content_IN
+        
+        # make sure we have content before we do anything.
+        if ( ( value_OUT ) and ( value_OUT != None ) and ( value_OUT != "" ) ):
+
+            # store the host and path we'll switch to
+            new_host_and_path = self.BLOG_URL_NEW_HOST_AND_PATH
+
+            #--------------------------------------------------------------------
+            # look for http://community.detroitnews.com/blogs/index.php/neighborhood/
+            #--------------------------------------------------------------------
+
+            # what we'll be replacing.
+            old_host_and_path = self.BLOG_URL_OLD_HOST_AND_PATH_1
+
+            # replace.
+            value_OUT = self.clean_blog_URL( value_OUT, old_host_and_path, new_host_and_path )
+
+            #--------------------------------------------------------------------
+            # look for http://community.detnews.com/blogs/index.php/neighborhood/
+            #--------------------------------------------------------------------
+
+            old_host_and_path = self.BLOG_URL_OLD_HOST_AND_PATH_2
+
+            # replace.
+            value_OUT = self.clean_blog_URL( value_OUT, old_host_and_path, new_host_and_path )
+
+        #-- END check to see if we need to do anything. --#
+        
+        return value_OUT        
+        
+    #-- END method clean_blog_URLs()
+
+
+    def clean_content( self, content_IN, *args, **kwargs ):
+
+        # return reference
+        value_OUT = ""
+        
+        # store content in return variable.
+        value_OUT = content_IN
+        
+        # make sure we have content before we do anything.
+        if ( ( value_OUT ) and ( value_OUT != None ) and ( value_OUT != "" ) ):
+        
+            # first, run the unicode escape method.
+            value_OUT = StringHelper.unicode_escape( value_OUT )
+            
+            # !un-escape certain characters.
+            
+            # "&#60;" ==> "<"
+            value_OUT = value_OUT.replace( "&#60;", "<" )
+            
+            # "&#62;" ==> ">"
+            value_OUT = value_OUT.replace( "&#62;", ">" )
+            
+            # "&#34;" ==> """
+            value_OUT = value_OUT.replace( "&#34;", "\"" )
+            
+            # "&#38;amp;" ==> "&amp;"
+            value_OUT = value_OUT.replace( "&#38;amp;", "&amp;" )
+            
+            # clean old blog URLs in links.
+            value_OUT = self.clean_blog_URLs( value_OUT )
+
+        #-- END check to see if we need to do anything. --#
+        
+        return value_OUT        
+        
+    #-- END method clean_content()
+
+
+    def clean_body_content( self, content_IN, *args, **kwargs ):
+
+        # return reference
+        value_OUT = ""
+        
+        # store content in return variable.
+        value_OUT = content_IN
+        
+        # make sure we have content before we do anything.
+        if ( ( value_OUT ) and ( value_OUT != None ) and ( value_OUT != "" ) ):
+        
+            # first, run the shared clean code.
+            value_OUT = self.clean_content( value_OUT )
+            
+        #-- END check to see if we need to do anything. --#
+        
+        return value_OUT        
+        
+    #-- END method clean_body_content()
+    
+
+    def clean_comment_content( self, content_IN, *args, **kwargs ):
+
+        # return reference
+        value_OUT = ""
+        
+        # store content in return variable.
+        value_OUT = content_IN
+        
+        # make sure we have content before we do anything.
+        if ( ( value_OUT ) and ( value_OUT != None ) and ( value_OUT != "" ) ):
+        
+            # first, run the shared clean code.
+            value_OUT = self.clean_content( value_OUT )
+
+        #-- END check to see if we need to do anything. --#
+        
+        return value_OUT        
+        
+    #-- END method clean_comment_content()
+    
 
     def close_db_connection( self ):
         
@@ -1076,6 +1279,7 @@ class B2E_Importer():
         more_index = -1
         content_before_more = ""
         content_after_more = ""
+        do_store_excerpt = False
 
         # variables for authors
         author_status = ""
@@ -1208,6 +1412,8 @@ class B2E_Importer():
         # ==> content_encoded = models.TextField( blank = True, null = True )
         # ==> excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
         
+        do_store_excerpt = self.store_excerpt
+        
         # locate "<!--more-->" in post.
         more_index = current_post_content.lower().find( "<!--more-->" )
 
@@ -1218,8 +1424,14 @@ class B2E_Importer():
             content_before_more = current_post_content[ 0 : more_index ]
             content_after_more = current_post_content[ more_index + 11 : len( current_post_content ) ]
         
-            # take everything before "<!--more-->" and place it in excerpt.
-            current_item_model.excerpt_encoded = content_before_more
+            # store off excerpt?
+            if ( do_store_excerpt == True ):
+            
+                # take everything before "<!--more-->" and place it in excerpt.
+                content_before_more = self.clean_body_content( content_before_more )
+                current_item_model.excerpt_encoded = content_before_more
+                
+            #-- END check to see if we store off excerpt --#
             
             # then, remove "<!--more-->" from complete post, store result in content_encoded.
             current_post_cleaned_content = content_before_more + "\n" + content_after_more
@@ -1232,10 +1444,8 @@ class B2E_Importer():
         #-- END check to see if we found "<!--more-->" --#
         
         # escape unicode crap.
-        current_post_cleaned_content = StringHelper.unicode_escape( current_post_cleaned_content )
+        current_post_cleaned_content = self.clean_body_content( current_post_cleaned_content )
 
-        # !TODO - put p-tags around paragraphs.
-        
         # set content encoded.
         current_item_model.content_encoded = current_post_cleaned_content
 
@@ -1608,10 +1818,8 @@ WHERE comment_status = 'published'
                     # ==> content_encoded = models.TextField( blank = True, null = True )
 
                     # escape unicode crap.
-                    current_comment_cleaned = StringHelper.unicode_escape( current_comment_content )
+                    current_comment_cleaned = self.clean_comment_content( current_comment_content )
             
-                    # !TODO - put p-tags around paragraphs.
-                    
                     # set content encoded.
                     current_comment_model.content_encoded = current_comment_cleaned
 
