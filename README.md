@@ -6,7 +6,11 @@ Django application that helps to convert content from other blogs to Wordpress W
 
 ### Dependencies
 
-The core conv2wp classes just make use of base python packages and django.  The B2Evolution import code uses a few routines from the python_utilities package ( [https://github.com/jonathanmorgan/python_utilities](https://github.com/jonathanmorgan/python_utilities) ) and use Beautiful Soup version 4.
+The core conv2wp classes just make use of base python packages and django.
+
+The B2Evolution import code uses a few routines from the python\_utilities package ( [https://github.com/jonathanmorgan/python_utilities](https://github.com/jonathanmorgan/python_utilities) ) and uses Beautiful Soup version 4.
+
+The basic import code also uses the nameparser library ( [http://pypi.python.org/pypi/nameparser](http://pypi.python.org/pypi/nameparser) ).
 
 ### Install
 
@@ -23,6 +27,14 @@ If you are migrating from blog software and will be reading blog posts out of a 
 - install South (data migration tool), if it isn't already installed.
 
         (sudo) pip install South
+
+- install Beautiful Soup 4 (HTML parsing tool), if it isn't already installed.
+
+        (sudo) pip install beautifulsoup4
+
+- install Name Parser, if it isn't already installed.
+
+        (sudo) pip install nameparser
 
 - in your work directory, create a django site ( see [https://docs.djangoproject.com/en/dev/intro/tutorial01/](https://docs.djangoproject.com/en/dev/intro/tutorial01/) for more details )
 
@@ -194,6 +206,8 @@ If you don't use manage.py to open a shell (or if you are making a shell script 
 ## Example
 
 There is a complete example of how to put blog data into the conv2wp objects in the /b2e directory, in the file b2e\_importer.py.  The method that starts it all off is import\_b2e().  Pass it a slug to identify your batch with and an optional blog number.  This method will walk you through the steps and common gotchas involved in populating objects that are then turned into a WXR file.
+
+There is also a high-level example of how you import posts and then output a WXR file that contains those posts in examples/basic\_import\_example.py.
 
 ## Notes
 - official WXR sample from automattic: [https://wpcom-themes.svn.automattic.com/demo/theme-unit-test-data.xml](https://wpcom-themes.svn.automattic.com/demo/theme-unit-test-data.xml)

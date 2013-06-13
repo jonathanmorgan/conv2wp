@@ -31,6 +31,10 @@ import re
 import MySQLdb
 import bs4 # Beautiful Soup HTML parsing.
 
+# nameparse import
+# http://pypi.python.org/pypi/nameparser
+from nameparser import HumanName
+
 # conv2wp imports
 from conv2wp.models import Author
 from conv2wp.models import Batch
@@ -41,6 +45,7 @@ from conv2wp.models import Item
 
 # python_utils imports
 from python_utilities.strings.string_helper import StringHelper
+from python_utilities.django_utils.django_string_helper import DjangoStringHelper
 
 #===============================================================================#
 # Class definitions.
@@ -61,6 +66,8 @@ class Basic_Importer():
     POST_STATUS_DRAFT = "draft"
     
     RSS_DATE_STRFTIME_FORMAT = "%a, %d %b %Y %H:%M:%S"
+    
+    PUBDATE_STRFTIME_FORMAT = "%Y%m%d"
     
     #---------------------------------------------------------------------------#
     # instance variables
@@ -107,16 +114,16 @@ class Basic_Importer():
         b2e_importer = cls()
         
         # initialize database
-        b2e_importer.db_database = "b2"
+        b2e_importer.db_database = "classicalvoiceamerica"
         b2e_importer.db_username = "django_user"
         b2e_importer.db_password = password_IN
         
         # initialize channel information
-        b2e_importer.channel_title = "Going home: A journal on Detroit's neighborhoods"
-        b2e_importer.channel_description = "A Detroit News journal of the city's neighborhoods, starting with the Dobel St. area on the east side, just south of McNichols and east of Van Dyke. "
+        b2e_importer.channel_title = "Classical Voice America Network"
+        b2e_importer.channel_description = "Informed Review and Opinion from the Music Critics Association of North America"
         b2e_importer.channel_generator = "https://github.com/jonathanmorgan/conv2wp"
-        b2e_importer.channel_base_site_url = "http://detroitnews.com"
-        b2e_importer.channel_base_blog_url = "http://community.detroitnews.com/blogs/index.php/neighborhood"
+        b2e_importer.channel_base_site_url = "http://classicalvoiceamerica.org"
+        b2e_importer.channel_base_blog_url = "http://classicalvoiceamerica.org/blog/index.cfm"
         
         # initialize time zone.
         b2e_importer.time_zone = "-0500"
@@ -141,8 +148,8 @@ class Basic_Importer():
         # create instance
         b2e_importer = cls.get_testing_instance( password_IN )
         
-        # run import for blog 14
-        status_message = b2e_importer.import_b2e( slug_IN, 14 )
+        # run import
+        status_message = b2e_importer.import_blog( slug_IN )
 
         # print the message
         print( status_message )
@@ -174,7 +181,6 @@ class Basic_Importer():
         # declare variables
         b2e_importer = None
         my_db_cursor = None
-        table_name_prefix = ""
         sql_select_posts = ""
         post_query_results = None
         current_post = None
@@ -190,24 +196,11 @@ class Basic_Importer():
         # retrieve database cursor.
         my_db_cursor = b2e_importer.get_database_cursor()
         
-        # get table prefix
-        table_name_prefix = b2e_importer.db_table_name_prefix
-        
         # create query to retrieve posts and author information.
-        sql_select_posts = "SELECT * FROM " + table_name_prefix + "posts ep"
-        sql_select_posts += " INNER JOIN " + table_name_prefix + "categories ec"
-        sql_select_posts += " ON ec.cat_ID = ep.post_main_cat_ID"
-        
-        # got a blog ID?
-        if ( ( blog_id_IN ) and ( blog_id_IN != None ) and ( blog_id_IN != "" ) and ( isinstance( blog_id_IN, numbers.Integral ) == True ) and ( blog_id_IN > 0 ) ):
-    
-            # we do - add where clause.
-            sql_select_posts += " WHERE ec.cat_blog_ID IN ( " + str( blog_id_IN ) + " )"
-            
-        #-- END check to see if ID passed in. --#
+        sql_select_posts = "SELECT * FROM cvablog"
         
         # then, ORDER_BY.
-        sql_select_posts += " ORDER BY ep.post_datecreated ASC;"
+        sql_select_posts += " ORDER BY pubdate ASC;"
         
         # execute query
         try:
@@ -223,9 +216,9 @@ class Basic_Importer():
                 current_fail = False
 
                 # get title and body.
-                current_id = current_post[ "post_ID" ]
-                current_title = current_post[ "post_title" ]
-                current_body = [ "post_content" ]
+                current_id = current_post[ "blogid" ]
+                current_title = current_post[ "headline" ]
+                current_body = [ "blog" ]
                 
                 # look in title
                 try:
@@ -433,7 +426,7 @@ class Basic_Importer():
             value_OUT = value_OUT.replace( "&#38;amp;", "&amp;" )
             
             # clean old blog URLs in links.
-            value_OUT = self.clean_blog_URLs( value_OUT )
+            #value_OUT = self.clean_blog_URLs( value_OUT )
 
         #-- END check to see if we need to do anything. --#
         
@@ -572,15 +565,15 @@ class Basic_Importer():
     #-- END method connect_to_database() --#
 
 
-    def get_conv2wp_author( self, author_b2e_id_IN, *args, **kwargs ):
+    def get_conv2wp_author( self, author_id_IN, *args, **kwargs ):
     
         '''
-        Accepts author ID (B2E user ID).  First, checks to see if an author 
+        Accepts author ID.  First, checks to see if an author 
            exists for this User ID.  If yes, retrieves it. If no, pulls author
-           information from B2E, uses it to create an Author instance, saves the
+           information from blog, uses it to create an Author instance, saves the
            instance, then returns it.
            
-        Post-conditions: If no Author exists for E2 user ID passed in, creates
+        Post-conditions: If no Author exists for user ID passed in, creates
            Author instance and stores it in database.
         '''
     
@@ -592,11 +585,12 @@ class Basic_Importer():
         my_db_cursor = None
         result_count = -1
         query_result = None
-        table_name_prefix = ""
         author_user_id = ""
         author_user_login = ""
         author_user_email = ""
+        author_human_name = None
         author_user_first_name = ""
+        author_user_middle_name = ""
         author_user_last_name = ""
         author_user_nickname = ""
         author_user_idmode = ""
@@ -606,7 +600,7 @@ class Basic_Importer():
         try:
         
             # Try to get Author.
-            instance_OUT = Author.objects.all().get( original_user_id = author_b2e_id_IN )
+            instance_OUT = Author.objects.all().get( original_user_id = author_id_IN )
         
         except Exception, e:
         
@@ -615,11 +609,8 @@ class Basic_Importer():
             # retrieve database cursor.
             my_db_cursor = self.get_database_cursor()
             
-            # get table prefix
-            table_name_prefix = self.db_table_name_prefix
-            
             # create query to retrieve posts and author information.
-            sql_select_user = "SELECT * FROM " + table_name_prefix + "users WHERE user_ID = " + str( author_b2e_id_IN ) + ";"
+            sql_select_user = "SELECT * FROM cvabloggers WHERE bloggerid = " + str( author_id_IN ) + ";"
             
             # execute query
             try:
@@ -635,7 +626,7 @@ class Basic_Importer():
                     if ( result_count > 1 ):
                     
                         # more than one match.  Error.
-                        print( self.STATUS_PREFIX_ERROR + "More than one user matches ID " + str( author_b2e_id_IN ) + ".  That should be impossible..." )
+                        print( self.STATUS_PREFIX_ERROR + "More than one user matches ID " + str( author_id_IN ) + ".  That should be impossible..." )
                         
                     #-- END sanity check. --#
                         
@@ -646,14 +637,27 @@ class Basic_Importer():
                     instance_OUT = Author()
 
                     # retrieve Author values we will use.
-                    author_user_id = query_result[ "user_ID" ]
-                    author_user_login = query_result[ "user_login" ]
-                    author_user_email = query_result[ "user_email" ]
-                    author_user_first_name = query_result[ "user_firstname" ]
-                    author_user_last_name = query_result[ "user_lastname" ]
-                    author_user_nickname = query_result[ "user_nickname" ]
-                    author_user_idmode = query_result[ "user_idmode" ]
+                    author_user_id = query_result[ "bloggerid" ]
+                    author_user_login = query_result[ "username" ]
+                    author_user_email = query_result[ "email" ]
+                    
+                    # use HumanName to parse name
+                    author_human_name = HumanName( author_user_login )
+                    
+                    # get name parts from there.
+                    author_user_first_name = author_human_name.first
+                    
+                    author_user_middle_name = author_human_name.middle
+                    if ( ( author_user_middle_name ) and ( author_user_middle_name != None ) and ( author_user_middle_name != "" ) ):
+                    
+                        # yes - append it to first name.
+                        author_user_first_name += " " + author_user_middle_name
+                        
+                    #-- END check to see if middle name. --#
+                    
+                    author_user_last_name = author_human_name.last
 
+                    author_user_nickname = query_result[ "username" ]
 
                     # ==> original_user_id = models.IntegerField()
                     instance_OUT.original_user_id = author_user_id
@@ -671,47 +675,8 @@ class Basic_Importer():
                     instance_OUT.last_name = author_user_last_name
 
                     # ==> display_name = models.CharField( max_length = 255, blank = True, null = True )
-                    
-                    # set display name based on idmode value
-                    if ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NICKNAME ):
-                    
-                        # set display name to nickname
-                        my_display_name = author_user_nickname
-                        
-                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_LOGIN ):
-                    
-                        # set display name to login name
-                        my_display_name = author_user_login
-                        
-                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NAMEFL ):
-                    
-                        # set display name to first name, last name
-                        my_display_name = author_user_first_name + " " + author_user_last_name
-                        
-                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_NAMELF ):
-                    
-                        # set display name to last name, first name
-                        my_display_name = author_user_last_name + " " + author_user_first_name
-                        
-                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_FIRSTNAME ):
-                    
-                        # set display name to first name
-                        my_display_name = author_user_first_name
-                        
-                    elif ( author_user_idmode == self.B2E_USER_DISPLAY_TYPE_LASTNAME ):
-                    
-                        # set display name to last name
-                        my_display_name = author_user_last_name
-                        
-                    else:
-                    
-                        # if nothing set, use nickname.
-                        my_display_name = author_user_nickname
-                    
-                    #-- END check to see what we use as display name. --#
-                    
                     # set display name
-                    instance_OUT.display_name = my_display_name
+                    instance_OUT.display_name = author_user_nickname
 
                     # Fields we aren't populating.
                     # - middle_name = models.CharField( max_length = 255, blank = True, null = True )
@@ -728,7 +693,7 @@ class Basic_Importer():
                 else:
                 
                     # No match - return None
-                    print( self.STATUS_PREFIX_ERROR + "No user matches ID " + str( author_b2e_id_IN ) + "." )
+                    print( self.STATUS_PREFIX_ERROR + "No user matches ID " + str( author_id_IN ) + "." )
                     instance_OUT = None
                     
                 #-- END check to see if query found B2E user. --#
@@ -736,7 +701,7 @@ class Basic_Importer():
             except Exception, e:
             
                 # Database exception.  Output error message, return None.
-                print( self.STATUS_PREFIX_ERROR + "Database error looking for B2E user " + str( author_b2e_id_IN ) + " - Exception message: " + str( e ) )
+                print( self.STATUS_PREFIX_ERROR + "Database error looking for user " + str( author_id_IN ) + " - Exception message: " + str( e ) )
                 instance_OUT = None
             
             #-- END try/except around author query --#
@@ -748,13 +713,13 @@ class Basic_Importer():
     #-- END method get_conv2wp_author() --#
 
 
-    def get_conv2wp_batch( self, slug_IN, blog_id_IN = -1, *args, **kwargs ):
+    def get_conv2wp_batch( self, slug_IN, *args, **kwargs ):
     
         '''
-        Accepts required slug (label for this batch, no spaces, please), blog ID
-           if there is one.  Looks for existing batch with slug.  If found,
-           returns it.  If not, Creates, saves, and returns batch for this
-           conversion, based on values contained within this instance.
+        Accepts required slug (label for this batch, no spaces, please).  Looks
+           for existing batch with slug.  If found, returns it.  If not, Creates,
+           saves, and returns batch for this conversion, based on values
+           contained within this instance.
            
         Postconditions: Batch is stored in database before it is returned.  You
            must pass in a non-empty slug.  If no slug passed in, Exception is
@@ -785,13 +750,7 @@ class Basic_Importer():
         instance_OUT.slug = slug_IN
         
         # title
-        instance_OUT.title = slug_IN + " - Converting B2E to WordPress"
-        if ( blog_id_IN > 0 ):
-        
-            # we are just converting a specific blog.  Output that ID.
-            instance_OUT.title += ", blog ID = " + str( blog_id_IN )
-        
-        #-- END check to see if blog ID. --#
+        instance_OUT.title = slug_IN + " - Converting blog to WordPress"
                
         # save
         instance_OUT.save()
@@ -801,14 +760,13 @@ class Basic_Importer():
     #-- END method get_conv2wp_batch() --#
 
 
-    def get_conv2wp_channel( self, batch_IN, blog_id_IN = -1, *args, **kwargs ):
+    def get_conv2wp_channel( self, batch_IN, *args, **kwargs ):
     
         '''
-        Accepts required batch, blog ID if there is one.  Looks for channel for
-           batch (should only be one, for now).  If finds one, returns it.  If
-           not, creates one, saves, associates it with the batch, then returns 
-           channel instance for this conversion, based on values contained within
-           this instance.
+        Accepts required batch.  Looks for channel for batch (should only be one,
+           for now).  If finds one, returns it.  If not, creates one, saves,
+           associates it with the batch, then returns channel instance for this
+           conversion, based on values contained within this instance.
            
         Postconditions: Channel is stored in database before it is returned, and
            is associated with Batch passed in.  You must pass in a batch.  If no
@@ -979,19 +937,22 @@ class Basic_Importer():
     #-- END method get_database_cursor() --#
 
 
-    def import_blog( self, slug_IN, blog_id_IN = -1, *args, **kwargs ):
+    def import_blog( self, slug_IN, blogger_id_list_IN = None, start_date_IN = None, *args, **kwargs ):
     
         '''
-        Accepts an optional blog ID, imports all authors, posts, and
-           comments from B2E blog into the conv2wp database tables, so we
-           can then render them into a WXR file, for importing into
-           Wordpress.
+        Imports authors and posts from a very basic blog database into the
+           conv2wp database tables, so we can then render them into a WXR file,
+           for importing into Wordpress.
+           
+        Parameters:
+        - blogger_id_list_IN - list of IDs of bloggers that we include.
+        - start_date_IN - datetime date we use to filter posts - only posts with pubdate after this date.
            
         Preconditions: Must place database information inside this instance.
         
-        Postconditions: Categories, authors, blog posts, and comments will be
-           added to the conv2wp tables, so they can be included in a WXR file.
-           The B2E database tables will not be changed.
+        Postconditions: Authors and blog posts will be added to the conv2wp
+           tables, so they can be included in a WXR file.  The original database
+           tables will not be changed.
         '''
         
         # return reference
@@ -1003,26 +964,13 @@ class Basic_Importer():
         current_status = ""
         
         # get a batch instance
-        my_batch = self.get_conv2wp_batch( slug_IN, blog_id_IN )
+        my_batch = self.get_conv2wp_batch( slug_IN )
         
         # create a channel - my_channel
-        my_channel = self.get_conv2wp_channel( my_batch, blog_id_IN )
+        my_channel = self.get_conv2wp_channel( my_batch )
         
-        # get and save categories.
-        current_status = self.process_categories( my_channel, blog_id_IN )
-        
-        # check status
-        if ( current_status == self.STATUS_SUCCESS ):
-        
-            # process posts.
-            status_OUT = self.process_posts( blog_id_IN, my_channel )
-        
-        else:
-        
-            # error processing categories.  Return message.
-            status_OUT = current_status
-            
-        #-- END check status of processing categories. --#        
+        # process posts.
+        status_OUT = self.process_posts( blogger_id_list_IN, start_date_IN, my_channel )
                
         # close database connection
         self.close_db_connection()
@@ -1052,11 +1000,14 @@ class Basic_Importer():
         current_post = None
         current_post_id = ""
         current_post_creator_user_id = ""
+        current_post_pubdate = ""
+        current_post_pubdate_dt = None
         current_post_datestart = ""
         current_post_datecreated = ""
         current_post_status = ""
         current_post_locale = ""
         current_post_content = ""
+        current_post_excerpt = ""
         current_post_title = ""
         current_post_urltitle = ""
         current_post_main_cat_id = -1
@@ -1065,6 +1016,10 @@ class Basic_Importer():
         current_post_url = ""
         current_post_guid = ""
         current_post_cleaned_content = ""
+        current_post_photo = ""
+        current_post_photo_credit = ""
+        current_post_photo_caption = ""
+        photo_HTML = ""
         
         # variables to hold pieces of pub date.
         pub_date = None
@@ -1098,21 +1053,56 @@ class Basic_Importer():
         current_post = current_post_row_IN
 
         # retrieve post values
-        current_post_id = current_post[ "post_ID" ]
-        current_post_creator_user_id = current_post[ "post_creator_user_ID" ]
-        current_post_datestart = current_post[ "post_datestart" ] # this is the date the post was published.
-        current_post_datecreated = current_post[ "post_datecreated" ]
-        current_post_status = current_post[ "post_status" ]
-        current_post_locale = current_post[ "post_locale" ]
-        current_post_content = current_post[ "post_content" ]
-        current_post_title = current_post[ "post_title" ]
-        current_post_urltitle = current_post[ "post_urltitle" ]
-        current_post_main_cat_id = current_post[ "post_main_cat_ID" ]
-        current_post_views = current_post[ "post_views" ]
-        current_post_wordcount = current_post[ "post_wordcount" ]
+        current_post_id = current_post[ "blogid" ]
+        current_post_creator_user_id = current_post[ "bloggerid" ]
+        
+        # get string date value
+        current_post_pubdate = current_post[ "pubdate" ]
+        
+        # convert to date time.
+        current_post_pubdate_dt = datetime.datetime.strptime( current_post_pubdate, self.PUBDATE_STRFTIME_FORMAT )
+        
+        # use this date in item.
+        current_post_datestart = current_post_pubdate_dt # this is the date the post was published.
+        current_post_datecreated = current_post_pubdate_dt
+        current_post_status = current_post[ "post" ]
+        current_post_locale = "en_US"
+        
+        # getpost contents
+        current_post_content = current_post[ "blog" ]
+        #current_post_content = DjangoStringHelper.entitize_4_byte_unicode( current_post_content )
+        
+        current_post_excerpt = current_post[ "summary" ]
+        #current_post_excerpt = DjangoStringHelper.entitize_4_byte_unicode( current_post_excerpt )
+
+        current_post_title = current_post[ "headline" ]
+        #current_post_title = DjangoStringHelper.entitize_4_byte_unicode( current_post_title )
+
+        #current_post_urltitle = current_post[ "post_urltitle" ]
+        current_post_urltitle = current_post[ "headline" ]
+        current_post_urltitle = current_post_urltitle.decode( "ascii", errors = 'ignore' )
+        
+        # replacements:
+        current_post_urltitle = current_post_urltitle.replace( ":", "-" )
+        current_post_urltitle = current_post_urltitle.replace( ",", "" )
+        current_post_urltitle = current_post_urltitle.replace( "'", "" )
+        current_post_urltitle = current_post_urltitle.replace( " ", "_" )
+        current_post_urltitle = current_post_urltitle.replace( "!", "" )
+        current_post_urltitle = current_post_urltitle.replace( "?", "" )
+        current_post_urltitle = current_post_urltitle.replace( '"', "" )
+        current_post_urltitle = current_post_urltitle.replace( '/', "_" )
+        current_post_urltitle = current_post_urltitle.replace( '&', "and" )
+        current_post_urltitle = current_post_urltitle.replace( '(', "" )
+        current_post_urltitle = current_post_urltitle.replace( ')', "" )
+        current_post_urltitle = current_post_urltitle.replace( '<i>', "" )
+        current_post_urltitle = current_post_urltitle.replace( '</i>', "" )
+        
+        #current_post_main_cat_id = current_post[ "post_main_cat_ID" ]
+        #current_post_views = current_post[ "post_views" ]
+        #current_post_wordcount = current_post[ "post_wordcount" ]
 
         # for now, just output.
-        print( "- current post: " + str( current_post_id ) + " - " + current_post_title + " - " + current_post_urltitle + " - " + str( current_post_datestart ) )
+        print( "- current post: " + str( current_post_id ) + " - " + current_post_title + " - " + str( current_post_datestart ) )
         
         # check if item already exists.
         try:
@@ -1129,6 +1119,12 @@ class Basic_Importer():
         
         #-- END check to see if item already is stored. --#
 
+        # photo variables        
+        current_post_photo = current_post[ "blogphoto1" ]
+        current_post_photo_credit = current_post[ "blogphoto1credit" ]
+        current_post_photo_caption = current_post[ "blogphoto1caption" ]
+
+
         #---------------------------------------------------------------#
         # set values.
         #---------------------------------------------------------------#
@@ -1143,7 +1139,7 @@ class Basic_Importer():
         # ==> post_status = models.CharField( max_length = 255, blank = True, null = True, default = POST_STATUS_PUBLISH )
         
         # is post published?
-        if ( current_post_status == self.B2E_POST_STATUS_PUBLISHED ):
+        if ( ( current_post_status == self.POST_STATUS_NOW ) or ( current_post_status == self.POST_STATUS_POST ) ):
         
             # yes - set it to publish in WordPress
             current_item_model.status = Item.POST_STATUS_PUBLISH
@@ -1158,7 +1154,7 @@ class Basic_Importer():
         # ==> post_name = models.CharField( max_length = 255, blank = True, null = True )
         # slug - convert underscores in the current_post_urltitle to hyphens.
 
-        current_item_model.post_name = current_post_urltitle.replace( "_", "-" )
+        current_item_model.post_name = current_post_urltitle
         
         # ==> post_date_time = models.DateTimeField( blank = True, null = True )
         # get and parse publication date.
@@ -1199,59 +1195,63 @@ class Basic_Importer():
         pub_date_day = pub_date.strftime( "%d" )
         
         # Link and URL
-        # sample - http://community.detroitnews.com/blogs/index.php/neighborhood/2013/03/28/another_blessing
-        current_post_url = "http://community.detroitnews.com/blogs/index.php/neighborhood/" + pub_date_year + "/" + pub_date_month + "/" + pub_date_day + "/" + current_post_urltitle
+        # sample - http://classicalvoiceamerica.org/blog/member.cfm?blogid=551&bloggerid=69
+        current_post_url = "http://classicalvoiceamerica.org/blog/member.cfm?blogid=" + str( current_post_id ) + "&bloggerid=" + str( current_post_creator_user_id )
         
         # ==> link = models.URLField( max_length = 255, blank = True, null = True )
         current_item_model.link = current_post_url
 
         # ==> guid = models.CharField( max_length = 255, blank = True, null = True )
-        # sample - http://community.detroitnews.com/blogs/index.php?title=another_blessing
-        current_post_guid = "http://community.detroitnews.com/blogs/index.php?title=" + current_post_urltitle
+        # same as post URL above.
+        current_post_guid = current_post_url
         current_item_model.guid = current_post_guid
         
         # ==> title = models.CharField( max_length = 255, blank = True, null = True )
-        current_item_model.title = StringHelper.unicode_escape( current_post_title )
+        current_item_model.title = DjangoStringHelper.unicode_escape( current_post_title )
 
-        # ==> content_encoded = models.TextField( blank = True, null = True )
         # ==> excerpt_encoded = models.TextField( blank = True, null = True, default = "" )
+        #current_item_model.excerpt_encoded = self.clean_body_content( current_post_excerpt )        
+        current_item_model.excerpt_encoded = current_post_excerpt
         
-        do_store_excerpt = self.store_excerpt
-        
-        # locate "<!--more-->" in post.
-        more_index = current_post_content.lower().find( "<!--more-->" )
-
-        # did we find it?
-        if ( more_index > -1 ):                
-
-            # get content before and after more
-            content_before_more = current_post_content[ 0 : more_index ]
-            content_after_more = current_post_content[ more_index + 11 : len( current_post_content ) ]
-        
-            # store off excerpt?
-            if ( do_store_excerpt == True ):
-            
-                # take everything before "<!--more-->" and place it in excerpt.
-                content_before_more = self.clean_body_content( content_before_more )
-                current_item_model.excerpt_encoded = content_before_more
-                
-            #-- END check to see if we store off excerpt --#
-            
-            # then, remove "<!--more-->" from complete post, store result in content_encoded.
-            current_post_cleaned_content = content_before_more + "\n" + content_after_more
-            
-        else:
-        
-            # no <!--more--> - just store the content.
-            current_post_cleaned_content  = current_post_content
-            
-        #-- END check to see if we found "<!--more-->" --#
-        
+        # ==> content_encoded = models.TextField( blank = True, null = True )
         # escape unicode crap.
-        current_post_cleaned_content = self.clean_body_content( current_post_cleaned_content )
+        #current_post_cleaned_content = self.clean_body_content( current_post_content )
+        #current_item_model.content_encoded = current_post_cleaned_content
 
         # set content encoded.
-        current_item_model.content_encoded = current_post_cleaned_content
+        current_item_model.content_encoded = current_post_content
+        
+        # photo?
+        if ( ( current_post_photo ) and ( current_post_photo != None ) and ( current_post_photo != "" ) ):
+
+            # there is a photo.
+            photo_HTML = "<p class=\"main_photo\" id=\"main_photo\"><img src=\"http://classicalvoiceamerica.org/blog/images/"
+            photo_HTML += current_post_photo
+            photo_HTML += "\" />"
+            
+            # credit?
+            if ( ( current_post_photo_credit ) and ( current_post_photo_credit != None ) and ( current_post_photo_credit != "" ) ):
+            
+                # we have a credit
+                photo_HTML += "<br /><div class=\"photo_credit\">" + current_post_photo_credit + "</div>"
+
+            #-- END check to see if credit --#
+
+            # caption?
+            if ( ( current_post_photo_caption ) and ( current_post_photo_caption != None ) and ( current_post_photo_caption != "" ) ):
+
+                # we have a caption
+                photo_HTML += "<br /><div class=\"photo_caption\">" + current_post_photo_caption + "</div>"
+
+            #-- END check to see if caption --#
+
+            # close <p>
+            photo_HTML += "</p>"
+            
+            # add to front of content_encoded.
+            current_item_model.content_encoded = photo_HTML + current_item_model.content_encoded
+            
+        #-- END check to see if photo --#
 
         # save item.
         current_item_model.save()
@@ -1264,21 +1264,6 @@ class Basic_Importer():
         author_status = self.process_post_author( current_post_creator_user_id, current_item_model )
         print( "    - Author status: " + author_status )
         
-        #---------------------------------------------------------------#
-        # Categories (main, other)
-        #---------------------------------------------------------------#
-
-        # ==> categories = models.ManyToManyField( Category, blank = True, null = True )
-        category_status = self.process_post_categories( current_post_main_cat_id, current_item_model )
-        print( "    - Category status: " + category_status )
-
-        #---------------------------------------------------------------#
-        # Comments
-        #---------------------------------------------------------------#
-
-        comment_status = self.process_post_comments( current_item_model )
-        print( "    - Comment status: " + comment_status )
-
         # Fields we aren't setting (or are leaving set to default):
         # - guid_is_permalink = models.BooleanField( 'Is permalink?', default = False )
         # - description = models.TextField( blank = True, null = True, default = "" )
@@ -1293,20 +1278,20 @@ class Basic_Importer():
         # - tags = models.ManyToManyField( Tag, blank = True, null = True )
         
         # save item?
-        #current_item_model.save()
+        current_item_model.save()
 
         return status_OUT
 
     #-- END method process_post() --#
     
     
-    def process_post_author( self, author_b2e_id_IN, item_IN, *args, **kwargs ):
+    def process_post_author( self, author_id_IN, item_IN, *args, **kwargs ):
     
         '''
-        Accepts author ID (B2E user ID), and item for B2E blog post that has been
+        Accepts author ID, and item for blog post that has been
            initialized to contain all information from the post (including post
            ID).  First, checks to see if an author exists for this User ID.  If
-           yes, retrieves it. If no, pulls author information from E2, uses it to
+           yes, retrieves it. If no, pulls author information from db, uses it to
            create an Author instance.  Then, associates Author with item (and
            channel - item method should do that) and we're done.
            
@@ -1326,7 +1311,7 @@ class Basic_Importer():
         table_name_prefix = ""
         
         # try to find author by their B2E ID.
-        author_model = self.get_conv2wp_author( author_b2e_id_IN )
+        author_model = self.get_conv2wp_author( author_id_IN )
         
         # got one?
         if ( ( author_model ) and ( author_model != None ) ):
@@ -1337,7 +1322,7 @@ class Basic_Importer():
         else:
         
             # could not find author.  Output error message.
-            status_OUT = self.STATUS_PREFIX_ERROR + "Could not find B2E user for ID " + str( author_b2e_id_IN ) + ", so cannot process."
+            status_OUT = self.STATUS_PREFIX_ERROR + "Could not find user for ID " + str( author_id_IN ) + ", so cannot process."
 
         #-- END check to see if we got an author for user ID. --#
         
@@ -1346,16 +1331,13 @@ class Basic_Importer():
     #-- END method process_post_author() --#
 
 
-    def process_posts( self, blog_id_IN = -1, channel_IN = None, *args, **kwargs ):
+    def process_posts( self, blogger_id_list_IN = None, start_date_IN = None, channel_IN = None, *args, **kwargs ):
         
         '''
-        # get posts - if we have a blog ID, limit to that blog.
-        
-        # For each post:
-        # - create Item, load with information from post.
-        # - get author user, add it to Authors.
-        # - get comments for post, store them in Comments, asociated to Item.
-        # - get categories for post, look up and associate them.
+        get posts, filtered on blogger ID and start date if those are passed in.       
+        For each post:
+        - create Item, load with information from post.
+        - get author user, add it to Authors.
         '''
 
         # return reference
@@ -1367,47 +1349,64 @@ class Basic_Importer():
         sql_select_posts = ""
         post_query_results = None
         current_post = None
+        where_prefix = ""
+        user_id_list_string = ""
         
         # retrieve database cursor.
         my_db_cursor = self.get_database_cursor()
         
-        # get table prefix
-        table_name_prefix = self.db_table_name_prefix
-        
         # create query to retrieve posts and author information.
-        sql_select_posts = "SELECT * FROM " + table_name_prefix + "posts ep"
-        sql_select_posts += " INNER JOIN " + table_name_prefix + "categories ec"
-        sql_select_posts += " ON ec.cat_ID = ep.post_main_cat_ID"
+        sql_select_posts = "SELECT * FROM cvablog"
+
+        # initialize where prefix
+        where_prefix = " WHERE"
+
+        # start date?
+        if ( start_date_IN != None ):
         
-        # got a blog ID?
-        if ( ( blog_id_IN ) and ( blog_id_IN != None ) and ( blog_id_IN != "" ) and ( isinstance( blog_id_IN, numbers.Integral ) == True ) and ( blog_id_IN > 0 ) ):
-    
-            # we do - add where clause.
-            sql_select_posts += " WHERE ec.cat_blog_ID IN ( " + str( blog_id_IN ) + " )"
+            # yes, have one.  Add it to SQL.
+            sql_select_posts += where_prefix + " pubdate > '" + start_date_IN.strftime( self.PUBDATE_STRFTIME_FORMAT ) + "'"
+
+            # update prefix
+            where_prefix = " AND"
+        
+        #-- END check for start date. --#
+
+        # include blogger IDs?
+        if ( ( blogger_id_list_IN != None ) and ( len( blogger_id_list_IN ) > 0 ) ):
+        
+            # we have a list.  Convert it to a string.
+            user_id_list_string = ','.join( blogger_id_list_IN )
             
-        #-- END check to see if ID passed in. --#
+            # add to sql
+            sql_select_posts += where_prefix + " bloggerid IN ( " + user_id_list_string + " )"
+            
+            # update prefix
+            where_prefix = " AND"
+        
+        #-- END check for list of blogger IDs. --#
         
         # then, ORDER_BY.
-        sql_select_posts += " ORDER BY ep.post_datecreated ASC;"
+        sql_select_posts += " ORDER BY pubdate ASC;"
         
         # execute query
-        try:
+        #try:
 
             # execute query and retrieve results        
-            my_db_cursor.execute( sql_select_posts )
-            query_results = my_db_cursor.fetchall()
+        my_db_cursor.execute( sql_select_posts )
+        query_results = my_db_cursor.fetchall()
 
             # loop over categories.
-            for current_post in query_results:
-                
+        for current_post in query_results:
+               
                 # process post
-                self.process_post( current_post, channel_IN )
+            self.process_post( current_post, channel_IN )
             
             #-- END loop over posts. --#
             
-        except Exception, e:
+        #except Exception, e:
         
-            status_OUT = self.STATUS_PREFIX_ERROR + "Exception message: " + str( e )
+        #    status_OUT = self.STATUS_PREFIX_ERROR + "Exception message: " + str( e )
         
         #-- END try/except around query --#
         
